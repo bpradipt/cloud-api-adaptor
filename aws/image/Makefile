@@ -50,7 +50,7 @@ UMOCI_REPO  = https://github.com/opencontainers/umoci
 build: $(IMAGE_FILE)
 
 $(IMAGE_FILE): $(BINARIES) $(FILES)
-	packer build -var vpc_id=${VPC_ID} -var subnet_id=${SUBNET_ID} -var owner_id=${OWNER_ID} -var region=${REGION} . 
+	packer build -var vpc_id=${VPC_ID} -var subnet_id=${SUBNET_ID} -var account_id=${ACCOUNT_ID} -var region=${REGION} . 
 
 $(AGENT_PROTOCOL_FORWARDER): force
 	cd "$(AGENT_PROTOCOL_FORWARDER_SRC)" && $(MAKE) agent-protocol-forwarder

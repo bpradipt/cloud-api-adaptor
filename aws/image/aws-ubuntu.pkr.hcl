@@ -22,7 +22,7 @@ source "amazon-ebs" "ubuntu" {
     }
 
     most_recent = true
-    owners      = ["${var.owner_id}", "aws-marketplace", "amazon"]
+    owners      = ["${var.account_id}", "aws-marketplace", "amazon"]
   }
   ssh_username = "ubuntu"
 }

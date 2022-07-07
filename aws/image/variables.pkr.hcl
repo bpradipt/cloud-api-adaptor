@@ -27,6 +27,6 @@ variable "subnet_id" {
   type = string
 }
 
-variable "owner_id" {
+variable "account_id" {
   type    = string
 }

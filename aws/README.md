@@ -9,7 +9,7 @@ set +o history
 export AWS_ACCESS_KEY_ID="REPLACE_ME"
 export AWS_SECRET_ACCESS_KEY="REPLACE_ME"
 export REGION="REPLACE_ME"
-export OWNER_ID="REPLACE_ME"
+export ACCOUNT_ID="REPLACE_ME"
 set -o history
 ```
 - Create a VPC with public internet access
