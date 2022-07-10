@@ -1,7 +1,14 @@
-# Setup instructions
+# Prerequisites
 
 - Install AWS CLI
 Follow the instructions [here](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) to install the AWS CLI for your platform
+
+- Install packer
+Follow the instructions [here](https://www.packer.io/downloads)
+
+Note: these tools are often outdated when installed by the distribution's package manager
+
+# Setup instructions
 
 - Export AWS variables
 ```
