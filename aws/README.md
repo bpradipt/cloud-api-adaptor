@@ -21,9 +21,9 @@ cd image
 ```
 make build
 ```
-export the AMI ID
+export the AMI ID displayed once the process completes
 ```
-export AMI_ID=<ami-id-returned-above>
+export POD_VM_AMI_ID=<ami-id-returned-above>
 ```
 - Create an EC2 launch template named "kata". 
 ```
