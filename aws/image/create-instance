@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+#Ubuntu 20.04 AMI id in ap-east-1
+AMI_ID=ami-0d11fee2d69126ec1
+
+#Ubuntu 20.04 AMI in us-east-1
+#AMI_ID=ami-08d4ac5b634553e16
+KP_NAME=bpradipt-key-rh
+
+aws ec2 run-instances \
+--image-id $AMI_ID \
+--instance-type t2.xlarge \
+--subnet-id $SUBNET_ID \
+--security-group-ids $SG_ID \
+--key-name $KP_NAME \
+--region $REGION \
+--block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=30}' \
+--tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value="peer-pods-k8s"}]' 
+
+
+# aws ec2 delete-instance 
