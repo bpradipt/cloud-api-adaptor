@@ -19,11 +19,15 @@ cd image
 ```
 - Create a custom AMI based on Ubuntu 20.04 having kata-agent and other dependencies.
 ```
-make build
+CLOUD_PROVIDER=aws make build
 ```
 export the AMI ID displayed once the process completes
 ```
 export POD_VM_AMI_ID=<ami-id-returned-above>
+```
+export Key pair name
+```
+export KP_NAME=<your-keypair>
 ```
 - Create an EC2 launch template named "kata". 
 ```
