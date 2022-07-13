@@ -2,7 +2,7 @@
 
 # Create EC2 launch template
 aws ec2 create-launch-template --launch-template-name kata --version-description version1 \
-  --launch-template-data "{\"NetworkInterfaces\":[{\"DeviceIndex\":0,\"AssociatePublicIpAddress\":true,\"Groups\":[\"$SG_ID\"],\"SubnetId\":\"$SUBNET_ID\",\"DeleteOnTermination\":true}],\"ImageId\":\"$POD_VM_AMI_ID\",\"InstanceType\":\"$INSTANCE_TYPE\"}" --region $REGION
+  --launch-template-data "{\"NetworkInterfaces\":[{\"DeviceIndex\":0,\"AssociatePublicIpAddress\":true,\"Groups\":[\"$SG_ID\"],\"SubnetId\":\"$SUBNET_ID\",\"DeleteOnTermination\":true}],\"ImageId\":\"$POD_VM_AMI_ID\",\"InstanceType\":\"$INSTANCE_TYPE\",\"KeyName\":\"$KP_NAME\"}" --region $REGION
 
 # Delete EC2 launch template
 #aws ec2 delete-launch-template --launch-template-name kata --region $REGION
