@@ -7,6 +7,7 @@ SUBNET_CIDR="172.20.1.0/24"
 
 #Generate a random 4 digit number to be used with names for uniqueness
 UUID=$(cat /proc/sys/kernel/random/uuid | cut -c 1-4)
+export UUID=$UUID
 
 VPC_ID=$(aws ec2 create-vpc --cidr-block $VPC_CIDR --region $REGION --tag-specification ResourceType=vpc,Tags=\[\{Key=Name,Value="peer-pods-vpc-$UUID"\}\]  --query Vpc.VpcId --output text)
 echo "VPC created " $VPC_ID
