@@ -32,10 +32,21 @@ build {
   sources = [
     "source.amazon-ebs.ubuntu"
   ]
+ 
+  provisioner "shell-local" {
+    command = "tar cf toupload/files.tar files"
+  }
 
   provisioner "file" {
-    source      = "./files"
+    source      = "./toupload"
     destination = "/tmp/"
+  }
+
+  provisioner "shell" {
+    inline = [
+      "cd /tmp && tar xf toupload/files.tar",
+      "rm toupload/files.tar"
+    ]
   }
 
   provisioner "file" {
