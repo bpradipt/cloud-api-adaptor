@@ -9,34 +9,34 @@ SUBNET_CIDR="172.20.1.0/24"
 UUID=$(cat /proc/sys/kernel/random/uuid | cut -c 1-4)
 export UUID=$UUID
 
-VPC_ID=$(aws ec2 create-vpc --cidr-block $VPC_CIDR --region $REGION --tag-specification ResourceType=vpc,Tags=\[\{Key=Name,Value="peer-pods-vpc-$UUID"\}\]  --query Vpc.VpcId --output text)
+VPC_ID=$(aws ec2 create-vpc --cidr-block $VPC_CIDR --region $AWS_REGION --tag-specification ResourceType=vpc,Tags=\[\{Key=Name,Value="peer-pods-vpc-$UUID"\}\]  --query Vpc.VpcId --output text)
 echo "VPC created " $VPC_ID
 export VPC_ID=$VPC_ID
 
-SG_ID=$(aws ec2 describe-security-groups --filters Name=vpc-id,Values=$VPC_ID --query "SecurityGroups[*].GroupId" --region $REGION --output text)
+SG_ID=$(aws ec2 describe-security-groups --filters Name=vpc-id,Values=$VPC_ID --query "SecurityGroups[*].GroupId" --region $AWS_REGION --output text)
 echo "Security Group ID " $SG_ID
 
-aws ec2 create-tags --resource $SG_ID --tags Key=Name,Value="peer-pods-sg-$UUID"
+aws ec2 create-tags --resource $SG_ID --tags Key=Name,Value="peer-pods-sg-$UUID" --region $AWS_REGION
 
-aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 22 --cidr "0.0.0.0/0" --region $REGION
-aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol "-1" --source-group $SG_ID --region $REGION
+aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 22 --cidr "0.0.0.0/0" --region $AWS_REGION
+aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol "-1" --source-group $SG_ID --region $AWS_REGION
 
-SUBNET_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block $SUBNET_CIDR --region $REGION --tag-specification ResourceType=subnet,Tags=\[\{Key=Name,Value="peer-pods-subnet-$UUID"\}\] --query Subnet.SubnetId --output text)
+SUBNET_ID=$(aws ec2 create-subnet --vpc-id $VPC_ID --cidr-block $SUBNET_CIDR --region $AWS_REGION --tag-specification ResourceType=subnet,Tags=\[\{Key=Name,Value="peer-pods-subnet-$UUID"\}\] --query Subnet.SubnetId --output text)
 echo "Subnet created " $SUBNET_ID
 export SUBNET_ID=$SUBNET_ID
 
-IGW_ID=$(aws ec2 create-internet-gateway --region $REGION --tag-specification ResourceType=internet-gateway,Tags=\[\{Key=Name,Value="peer-pods-igw-$UUID"\}\] --query InternetGateway.InternetGatewayId --output text)
+IGW_ID=$(aws ec2 create-internet-gateway --region $AWS_REGION --tag-specification ResourceType=internet-gateway,Tags=\[\{Key=Name,Value="peer-pods-igw-$UUID"\}\] --query InternetGateway.InternetGatewayId --output text)
 
 echo "Internet GW created " $IGW_ID
 
-aws ec2 attach-internet-gateway --vpc-id $VPC_ID --internet-gateway-id $IGW_ID --region $REGION
+aws ec2 attach-internet-gateway --vpc-id $VPC_ID --internet-gateway-id $IGW_ID --region $AWS_REGION
 
-RT_ID=$(aws ec2 create-route-table --vpc-id $VPC_ID --region $REGION --tag-specification ResourceType=route-table,Tags=\[\{Key=Name,Value="peer-pods-rt-$UUID"\}\] --query RouteTable.RouteTableId --output text )
+RT_ID=$(aws ec2 create-route-table --vpc-id $VPC_ID --region $AWS_REGION --tag-specification ResourceType=route-table,Tags=\[\{Key=Name,Value="peer-pods-rt-$UUID"\}\] --query RouteTable.RouteTableId --output text )
 
 echo "Route table created " $RT_ID
 
-aws ec2 create-route --route-table-id $RT_ID --destination-cidr-block 0.0.0.0/0 --gateway-id $IGW_ID --region $REGION
+aws ec2 create-route --route-table-id $RT_ID --destination-cidr-block 0.0.0.0/0 --gateway-id $IGW_ID --region $AWS_REGION
 
-aws ec2 associate-route-table  --subnet-id $SUBNET_ID --route-table-id $RT_ID --region $REGION
+aws ec2 associate-route-table  --subnet-id $SUBNET_ID --route-table-id $RT_ID --region $AWS_REGION
 
-aws ec2 modify-subnet-attribute --subnet-id $SUBNET_ID --map-public-ip-on-launch --region $REGION
+aws ec2 modify-subnet-attribute --subnet-id $SUBNET_ID --map-public-ip-on-launch --region $AWS_REGION

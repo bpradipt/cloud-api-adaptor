@@ -13,7 +13,7 @@ aws ec2 run-instances \
 --subnet-id $SUBNET_ID \
 --security-group-ids $SG_ID \
 --key-name $KP_NAME \
---region $REGION \
+--region $AWS_REGION \
 --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=30}' \
 --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value="peer-pods-k8s"}]' 
 
