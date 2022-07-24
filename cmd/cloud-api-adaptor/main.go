@@ -12,6 +12,7 @@ import (
 	"github.com/confidential-containers/cloud-api-adaptor/cmd"
 	"github.com/confidential-containers/cloud-api-adaptor/pkg/adaptor/hypervisor"
 	"github.com/confidential-containers/cloud-api-adaptor/pkg/adaptor/hypervisor/aws"
+	"github.com/confidential-containers/cloud-api-adaptor/pkg/adaptor/hypervisor/azure"
 	"github.com/confidential-containers/cloud-api-adaptor/pkg/adaptor/hypervisor/ibmcloud"
 	"github.com/confidential-containers/cloud-api-adaptor/pkg/adaptor/hypervisor/libvirt"
 	"github.com/confidential-containers/cloud-api-adaptor/pkg/adaptor/hypervisor/registry"
@@ -33,6 +34,7 @@ const DefaultShimTimeout = "60s"
 
 var ibmcfg ibmcloud.Config
 var awscfg aws.Config
+var azurecfg azure.Config
 var libvirtcfg libvirt.Config
 var hypcfg hypervisor.Config
 
@@ -59,6 +61,28 @@ func (cfg *daemonConfig) Setup() (cmd.Starter, error) {
 			flags.StringVar(&cfg.HostInterface, "host-interface", "", "Host Interface")
 
 		})
+
+
+	case "azure":
+    	        cmd.Parse("azure", os.Args[1:], func(flags *flag.FlagSet) {
+			flags.StringVar(&azurecfg.ClientId, "clientid", "", "Client Id")
+			flags.StringVar(&azurecfg.ClientSecret, "secret", "", "Client Secret")
+			flags.StringVar(&azurecfg.TenantId, "tenantid", "", "Tenant Id")
+			flags.StringVar(&azurecfg.ResourceGroupName, "resourcegroup", "", "Resource Group")
+			flags.StringVar(&azurecfg.Zone, "zone", "", "Zone")
+			flags.StringVar(&azurecfg.Region, "region", "", "Region")
+			flags.StringVar(&azurecfg.SubnetId, "subnetid", "", "Network Subnet Id")
+			flags.StringVar(&azurecfg.VnetName, "vnetname", "", "Virtual Network Name")
+			flags.StringVar(&azurecfg.SecurityGroupId, "securitygroupid", "", "Security Group Id")
+			flags.StringVar(&azurecfg.Size, "instance-size", "", "Instance size")
+			flags.StringVar(&azurecfg.ImageId, "imageid", "", "Image Id")
+			flags.StringVar(&hypcfg.SocketPath, "socket", hypervisor.DefaultSocketPath, "Unix domain socket path of remote hypervisor service")
+			flags.StringVar(&hypcfg.PodsDir, "pods-dir", hypervisor.DefaultPodsDir, "base directory for pod directories")
+			flags.StringVar(&hypcfg.HypProvider, "provider", "ibmcloud", "Hypervisor provider")
+			flags.StringVar(&cfg.TunnelType, "tunnel-type", podnetwork.DefaultTunnelType, "Tunnel provider")
+			flags.StringVar(&cfg.HostInterface, "host-interface", "", "Host Interface")
+		})
+
 
 	case "ibmcloud":
 		cmd.Parse("ibmcloud", os.Args[1:], func(flags *flag.FlagSet) {
@@ -109,6 +133,8 @@ func (cfg *daemonConfig) Setup() (cmd.Starter, error) {
 		hypervisorServer = registry.NewServer(hypcfg, awscfg, workerNode, daemon.DefaultListenPort)
 	} else if hypcfg.HypProvider == "libvirt" {
 		hypervisorServer = registry.NewServer(hypcfg, libvirtcfg, workerNode, daemon.DefaultListenPort)
+	} else if hypcfg.HypProvider == "azure" {
+		hypervisorServer = registry.NewServer(hypcfg, azurecfg, workerNode, daemon.DefaultListenPort)
 	}
 
 	return cmd.NewStarter(hypervisorServer), nil
