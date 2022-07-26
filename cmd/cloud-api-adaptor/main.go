@@ -41,7 +41,7 @@ var hypcfg hypervisor.Config
 func (cfg *daemonConfig) Setup() (cmd.Starter, error) {
 
 	if len(os.Args) < 2 {
-		fmt.Printf("%s aws|ibmcloud|libvirt <options>\n", os.Args[0])
+		fmt.Printf("%s aws|azure|ibmcloud|libvirt <options>\n", os.Args[0])
 		cmd.Exit(1)
 	}
 
@@ -62,9 +62,8 @@ func (cfg *daemonConfig) Setup() (cmd.Starter, error) {
 
 		})
 
-
 	case "azure":
-    	        cmd.Parse("azure", os.Args[1:], func(flags *flag.FlagSet) {
+		cmd.Parse("azure", os.Args[1:], func(flags *flag.FlagSet) {
 			flags.StringVar(&azurecfg.ClientId, "clientid", "", "Client Id")
 			flags.StringVar(&azurecfg.ClientSecret, "secret", "", "Client Secret")
 			flags.StringVar(&azurecfg.TenantId, "tenantid", "", "Tenant Id")
@@ -78,11 +77,10 @@ func (cfg *daemonConfig) Setup() (cmd.Starter, error) {
 			flags.StringVar(&azurecfg.ImageId, "imageid", "", "Image Id")
 			flags.StringVar(&hypcfg.SocketPath, "socket", hypervisor.DefaultSocketPath, "Unix domain socket path of remote hypervisor service")
 			flags.StringVar(&hypcfg.PodsDir, "pods-dir", hypervisor.DefaultPodsDir, "base directory for pod directories")
-			flags.StringVar(&hypcfg.HypProvider, "provider", "ibmcloud", "Hypervisor provider")
+			flags.StringVar(&hypcfg.HypProvider, "provider", "azure", "Hypervisor provider")
 			flags.StringVar(&cfg.TunnelType, "tunnel-type", podnetwork.DefaultTunnelType, "Tunnel provider")
 			flags.StringVar(&cfg.HostInterface, "host-interface", "", "Host Interface")
 		})
-
 
 	case "ibmcloud":
 		cmd.Parse("ibmcloud", os.Args[1:], func(flags *flag.FlagSet) {

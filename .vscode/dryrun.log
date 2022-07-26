@@ -1,0 +1,6 @@
+make --dry-run --always-make --keep-going --print-directory
+make: Entering directory `/Users/surajdeshmukh/code/work/cloud-api-adaptor'
+make: Leaving directory `/Users/surajdeshmukh/code/work/cloud-api-adaptor'
+ 
+Makefile:8: *** CLOUD_PROVIDER is not set.  Stop.
+
