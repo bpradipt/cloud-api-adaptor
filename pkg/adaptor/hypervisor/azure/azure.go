@@ -2,14 +2,34 @@ package azure
 
 import (
 	"context"
+	"fmt"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 )
 
+func CreateInstance(ctx context.Context, s *hypervisorService, parameters *armcompute.VirtualMachine) (*armcompute.VirtualMachine, error) {
+	vmClient, err := armcompute.NewVirtualMachinesClient(s.serviceConfig.SubscriptionId, s.azureClient, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating VM client: %w", err)
+	}
 
-func CreateInstance(c context.Context, cred azcore.TokenCredential, input *armcompute.VirtualMachine) error {
-	return nil
+	vmName := *parameters.Properties.OSProfile.ComputerName
+
+	pollerResponse, err := vmClient.BeginCreateOrUpdate(ctx, s.serviceConfig.ResourceGroupName, vmName, *parameters, nil)
+	if err != nil {
+		return nil, fmt.Errorf("beginning VM creation or update: %w", err)
+	}
+
+	resp, err := pollerResponse.PollUntilDone(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("waiting for the VM creation: %w", err)
+	}
+
+	logger.Printf("created VM successfully: %s", *resp.ID)
+
+	return &resp.VirtualMachine, nil
 }
 
 func DeleteInstance(c context.Context, cred azcore.TokenCredential, id string) error {

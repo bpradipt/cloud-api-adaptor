@@ -10,7 +10,7 @@ make all --print-data-base --no-builtin-variables --no-builtin-rules --question
 Makefile:8: *** CLOUD_PROVIDER is not set.  Stop.
 
 
-# Make data base, printed on Tue Jul 26 13:31:24 2022
+# Make data base, printed on Wed Jul 27 12:52:39 2022
 
 # Variables
 
@@ -18,10 +18,6 @@ Makefile:8: *** CLOUD_PROVIDER is not set.  Stop.
 <D = $(patsubst %/,%,$(dir $<))
 # automatic
 ?F = $(notdir $?)
-# environment
-ELECTRON_NO_ATTACH_CONSOLE = 1
-# environment
-LC_CTYPE = UTF-8
 # automatic
 ?D = $(patsubst %/,%,$(dir $?))
 # automatic
@@ -43,29 +39,27 @@ VSCODE_AMD_ENTRYPOINT = vs/workbench/api/node/extensionHostProcess
 # environment
 __CFBundleIdentifier = com.microsoft.VSCode
 # environment
-INFOPATH = /opt/homebrew/share/info:/opt/homebrew/share/info:
+INFOPATH = /opt/homebrew/share/info:
 # environment
-VSCODE_CWD = /Users/surajdeshmukh/code/work/cloud-api-adaptor
+VSCODE_CWD = /
 # environment
 GOPROXY = https://proxy.golang.org,direct
 # environment
-PATH = /opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/surajdeshmukh/.cargo/bin:/Users/surajdeshmukh/.local/bin:/Users/surajdeshmukh/go/bin:/Users/surajdeshmukh/.local/bin:/Users/surajdeshmukh/go/bin
+PATH = /opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Users/surajdeshmukh/.cargo/bin:/Users/surajdeshmukh/.local/bin:/Users/surajdeshmukh/go/bin
 # environment
 LSCOLORS = Gxfxcxdxbxegedabagacad
 # environment
 GOPATH = /Users/surajdeshmukh/go
 # environment
-LaunchInstanceID = 54C84CB4-8DA4-4B0F-8782-BC348AE3584A
+LaunchInstanceID = 690F231B-973D-4262-9280-44B4307F49FE
 # environment
 ELECTRON_RUN_AS_NODE = 1
 # default
 .FEATURES := target-specific order-only second-expansion else-if archives jobserver check-symlink
 # environment
-SSH_AUTH_SOCK = /private/tmp/com.apple.launchd.j5d1u8JcPO/Listeners
+SSH_AUTH_SOCK = /private/tmp/com.apple.launchd.kebN1ubYdV/Listeners
 # automatic
 %F = $(notdir $%)
-# environment
-TMUX_PANE = %0
 # environment
 PWD = /Users/surajdeshmukh/code/work/cloud-api-adaptor
 # environment
@@ -73,7 +67,7 @@ HOMEBREW_CELLAR = /opt/homebrew/Cellar
 # environment
 ORIGINAL_XDG_CURRENT_DESKTOP = undefined
 # environment
-MANPATH = /opt/homebrew/share/man:/usr/share/man:/usr/local/share/man:/opt/homebrew/share/man:
+MANPATH = /opt/homebrew/share/man::
 # environment
 GOMODCACHE = /Users/surajdeshmukh/go/pkg/mod
 # environment
@@ -81,9 +75,7 @@ HOME = /Users/surajdeshmukh
 # default
 MAKEFILEPATH = $(shell /usr/bin/xcode-select -print-path 2>/dev/null || echo /Developer)/Makefiles
 # environment
-VSCODE_CLI = 1
-# environment
-VSCODE_CODE_CACHE_PATH = /Users/surajdeshmukh/Library/Application Support/Code/CachedData/b06ae3b2d2dbfe28bca3134cc6be65935cdfea6a
+VSCODE_CODE_CACHE_PATH = /Users/surajdeshmukh/Library/Application Support/Code/CachedData/3b889b090b5ad5793f524b5d1d39fda662b96a2a
 # environment
 LOGNAME = surajdeshmukh
 # environment
@@ -96,32 +88,24 @@ VSCODE_HANDLES_UNCAUGHT_ERRORS = true
 ^D = $(patsubst %/,%,$(dir $^))
 # environment
 XPC_FLAGS = 0x0
-# environment
-COLORTERM = truecolor
 # default
 MAKE = $(MAKE_COMMAND)
+# default
+MAKECMDGOALS := all
 # environment
-LC_TERMINAL = iTerm2
-# environment
-SHLVL = 4
+SHLVL = 1
 # default
 MAKE_VERSION := 3.81
 # environment
 USER = surajdeshmukh
 # makefile
 .DEFAULT_GOAL := 
-# default
-MAKECMDGOALS := all
-# environment
-TERM_SESSION_ID = w1t2p0:FE38F84B-9291-4859-BD52-F77B836171BA
 # environment
 LESS = -R
 # automatic
 %D = $(patsubst %/,%,$(dir $%))
 # default
 MAKE_COMMAND := /Library/Developer/CommandLineTools/usr/bin/make
-# environment
-TERM_PROGRAM = tmux
 # default
 .VARIABLES := 
 # environment
@@ -129,7 +113,7 @@ TMPDIR = /var/folders/pc/npdy7gfs7xzcqxhsbrqrxxs00000gn/T/
 # automatic
 *F = $(notdir $*)
 # environment
-VSCODE_IPC_HOOK = /Users/surajdeshmukh/Library/Application Support/Code/1.69.1-main.sock
+VSCODE_IPC_HOOK = /Users/surajdeshmukh/Library/Application Support/Code/1.69.2-main.sock
 # environment
 MallocNanoZone = 0
 # makefile
@@ -139,25 +123,15 @@ MFLAGS = -Rrqp
 # automatic
 *D = $(patsubst %/,%,$(dir $*))
 # environment
-TERM_PROGRAM_VERSION = 3.3a
-# environment
-XPC_SERVICE_NAME = application.com.microsoft.VSCode.30156373.30156379.4AA68FFE-78DD-47FA-B4D4-9836B93B81C8
-# environment
-LC_TERMINAL_VERSION = 3.4.15
+XPC_SERVICE_NAME = application.com.microsoft.VSCode.30573056.30573062
 # environment
 HOMEBREW_PREFIX = /opt/homebrew
 # automatic
 +D = $(patsubst %/,%,$(dir $+))
-# environment
-TMUX = /private/tmp/tmux-501/default,28422,0
 # automatic
 +F = $(notdir $+)
 # environment
-ITERM_SESSION_ID = w1t2p0:FE38F84B-9291-4859-BD52-F77B836171BA
-# environment
 HOMEBREW_REPOSITORY = /opt/homebrew
-# environment
-COLORFGBG = 7;0
 # environment
 __CF_USER_TEXT_ENCODING = 0x1F5:0x0:0x0
 # environment
@@ -167,13 +141,11 @@ MAKEFILES :=
 # automatic
 <F = $(notdir $<)
 # environment
-ITERM_PROFILE = Default
-# environment
 PAGER = less
 # environment
 LC_ALL = C
 # environment
-SECURITYSESSIONID = 186b2
+SECURITYSESSIONID = 186ad
 # automatic
 ^F = $(notdir $^)
 # default
@@ -181,15 +153,15 @@ SUFFIXES :=
 # environment
 MAKELEVEL := 0
 # environment
-GPG_TTY = /dev/ttys000
+GPG_TTY = not a tty
 # environment
 LANG = C
 # environment
 TERM = xterm
 # environment
-VSCODE_PID = 683
+VSCODE_PID = 3713
 # variable set hash-table stats:
-# Load=87/1024=8%, Rehash=0, Collisions=5/101=5%
+# Load=73/1024=7%, Rehash=0, Collisions=2/87=2%
 
 # Pattern-specific Variable Values
 
@@ -197,7 +169,7 @@ VSCODE_PID = 683
 
 # Directories
 
-# . (device 16777233, inode 30174737): 22 files, no impossibilities.
+# . (device 16777230, inode 30174737): 22 files, no impossibilities.
 
 # 22 files, no impossibilities in 1 directories.
 
@@ -250,6 +222,6 @@ Makefile:
 # strcache size: total = 4096 / max = 4096 / min = 4096 / avg = 4096
 # strcache free: total = 4087 / max = 4087 / min = 4087 / avg = 4087
 
-# Finished Make data base on Tue Jul 26 13:31:24 2022
+# Finished Make data base on Wed Jul 27 12:52:39 2022
 
  

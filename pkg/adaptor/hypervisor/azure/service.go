@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/url"
 	"os"
@@ -13,9 +14,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
 
 	"github.com/confidential-containers/cloud-api-adaptor/pkg/adaptor/proxy"
 	daemon "github.com/confidential-containers/cloud-api-adaptor/pkg/forwarder"
@@ -39,12 +41,13 @@ type hypervisorService struct {
 	podsDir       string
 	daemonPort    string
 	nodeName      string
+	nicID         string
 	workerNode    podnetwork.WorkerNode
 	sync.Mutex
 }
 
 func newService(azureClient azcore.TokenCredential, config *Config, workerNode podnetwork.WorkerNode, podsDir, daemonPort string) pb.HypervisorService {
-	logger.Printf("service config %v", config)
+	logger.Printf("service config %+v", config)
 
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -136,7 +139,6 @@ func (s *hypervisorService) CreateVM(ctx context.Context, req *pb.CreateVMReques
 }
 
 func (s *hypervisorService) StartVM(ctx context.Context, req *pb.StartVMRequest) (*pb.StartVMResponse, error) {
-
 	sandbox, err := s.getSandbox(req.Id)
 	if err != nil {
 		return nil, err
@@ -182,6 +184,24 @@ func (s *hypervisorService) StartVM(ctx context.Context, req *pb.StartVMRequest)
 	// Get NIC using subnet and allow ports on the ssh group
 	err = s.createNetworkInterface(ctx, nicName)
 	if err != nil {
+		err = fmt.Errorf("creating VM network interface: %w", err)
+		logger.Printf("%v", err)
+		return nil, err
+	}
+
+	// require ssh key for authentication on linux
+	sshPublicKeyPath := os.ExpandEnv(s.serviceConfig.SSHKeyPath)
+	var sshBytes []byte
+	if _, err := os.Stat(sshPublicKeyPath); err == nil {
+		sshBytes, err = ioutil.ReadFile(sshPublicKeyPath)
+		if err != nil {
+			err = fmt.Errorf("reading ssh public key file: %w", err)
+			logger.Printf("%v", err)
+			return nil, err
+		}
+	} else {
+		err = fmt.Errorf("ssh public key: %w", err)
+		logger.Printf("%v", err)
 		return nil, err
 	}
 
@@ -193,7 +213,11 @@ func (s *hypervisorService) StartVM(ctx context.Context, req *pb.StartVMRequest)
 			},
 			StorageProfile: &armcompute.StorageProfile{
 				ImageReference: &armcompute.ImageReference{
-					CommunityGalleryImageID: to.Ptr(s.serviceConfig.ImageId),
+					// CommunityGalleryImageID: to.Ptr(s.serviceConfig.ImageId),
+					Offer:     to.Ptr("UbuntuServer"),
+					Publisher: to.Ptr("Canonical"),
+					SKU:       to.Ptr("18.04-LTS"),
+					Version:   to.Ptr("latest"),
 				},
 				OSDisk: &armcompute.OSDisk{
 					Name:         to.Ptr(diskName),
@@ -205,56 +229,62 @@ func (s *hypervisorService) StartVM(ctx context.Context, req *pb.StartVMRequest)
 				},
 			},
 			OSProfile: &armcompute.OSProfile{
-				ComputerName: to.Ptr(vmName),
-				CustomData:   to.Ptr(userDataEnc),
+				AdminUsername: to.Ptr(DefaultUserName),
+				ComputerName:  to.Ptr(vmName),
+				CustomData:    to.Ptr(userDataEnc),
 				LinuxConfiguration: &armcompute.LinuxConfiguration{
 					DisablePasswordAuthentication: to.Ptr(true),
 					//TBD: replace with a suitable mechanism to use precreated SSH key
 					SSH: &armcompute.SSHConfiguration{
 						PublicKeys: []*armcompute.SSHPublicKey{{
 							Path:    to.Ptr(fmt.Sprintf("/home/%s/.ssh/authorized_keys", DefaultUserName)),
-							KeyData: to.Ptr("aaaaaa"),
+							KeyData: to.Ptr(string(sshBytes)),
 						}},
 					},
 				},
 			},
 			NetworkProfile: &armcompute.NetworkProfile{
-				NetworkInterfaceConfigurations: []*armcompute.VirtualMachineNetworkInterfaceConfiguration{
-					{
-						Name: to.Ptr(nicName),
-						Properties: &armcompute.VirtualMachineNetworkInterfaceConfigurationProperties{
-							IPConfigurations: []*armcompute.VirtualMachineNetworkInterfaceIPConfiguration{
-								{
-									Name: to.Ptr(nicName + "-conf"),
-									Properties: &armcompute.VirtualMachineNetworkInterfaceIPConfigurationProperties{
-										Primary: to.Ptr(true),
-										Subnet: &armcompute.SubResource{
-											ID: to.Ptr(s.serviceConfig.SubnetId),
-										},
-									},
-								},
-							},
-							Primary:      to.Ptr(true),
-							DeleteOption: to.Ptr(armcompute.DeleteOptionsDelete),
-							NetworkSecurityGroup: &armcompute.SubResource{
-								ID: to.Ptr(s.serviceConfig.SecurityGroupId),
-							},
-						},
-					},
+				// NetworkInterfaceConfigurations: []*armcompute.VirtualMachineNetworkInterfaceConfiguration{
+				// 	{
+				// 		Name: to.Ptr(nicName),
+				// 		Properties: &armcompute.VirtualMachineNetworkInterfaceConfigurationProperties{
+				// 			IPConfigurations: []*armcompute.VirtualMachineNetworkInterfaceIPConfiguration{
+				// 				{
+				// 					Name: to.Ptr(nicName + "-conf"),
+				// 					Properties: &armcompute.VirtualMachineNetworkInterfaceIPConfigurationProperties{
+				// 						Primary: to.Ptr(true),
+				// 						Subnet: &armcompute.SubResource{
+				// 							ID: to.Ptr(s.serviceConfig.SubnetId),
+				// 						},
+				// 					},
+				// 				},
+				// 			},
+				// 			Primary:      to.Ptr(true),
+				// 			DeleteOption: to.Ptr(armcompute.DeleteOptionsDelete),
+				// 			NetworkSecurityGroup: &armcompute.SubResource{
+				// 				ID: to.Ptr(s.serviceConfig.SecurityGroupId),
+				// 			},
+				// 		},
+				// 	},
+				// },
+				NetworkInterfaces: []*armcompute.NetworkInterfaceReference{
+					{ID: to.Ptr(s.nicID)},
 				},
 			},
 		},
 	}
 
-	err = CreateInstance(context.TODO(), s.azureClient, &vmParameters)
+	vm, err := CreateInstance(context.TODO(), s, &vmParameters)
 	if err != nil {
-		return nil, fmt.Errorf("Creating instance returned error: %s", err)
+		err = fmt.Errorf("Creating instance returned error: %s", err)
+		logger.Printf("%v", err)
+		return nil, err
 	}
 
-	//Set vsi to instance id
-	sandbox.vsi = *vmParameters.ID
+	// Set vsi to instance id
+	sandbox.vsi = *vm.ID
 
-	logger.Printf("created an instance %s for sandbox %s", *vmParameters.Name, req.Id)
+	logger.Printf("created an instance %s for sandbox %s", *vm.Name, req.Id)
 
 	podNodeIPs, err := getIPs(vmParameters)
 	if err != nil {
@@ -353,5 +383,42 @@ func (s *hypervisorService) StopVM(ctx context.Context, req *pb.StopVMRequest) (
 }
 
 func (s *hypervisorService) createNetworkInterface(ctx context.Context, nicName string) error {
+	nicClient, err := armnetwork.NewInterfacesClient(s.serviceConfig.SubscriptionId, s.azureClient, nil)
+	if err != nil {
+		return fmt.Errorf("creating network interfaces client: %w", err)
+	}
+
+	parameters := armnetwork.Interface{
+		Location: to.Ptr(s.serviceConfig.Region),
+		Properties: &armnetwork.InterfacePropertiesFormat{
+			IPConfigurations: []*armnetwork.InterfaceIPConfiguration{
+				{
+					Name: to.Ptr(fmt.Sprintf("%s-ipConfig", nicName)),
+					Properties: &armnetwork.InterfaceIPConfigurationPropertiesFormat{
+						PrivateIPAllocationMethod: to.Ptr(armnetwork.IPAllocationMethodDynamic),
+						Subnet: &armnetwork.Subnet{
+							ID: to.Ptr(s.serviceConfig.SubnetId),
+						},
+					},
+				},
+			},
+			NetworkSecurityGroup: &armnetwork.SecurityGroup{
+				ID: to.Ptr(s.serviceConfig.SecurityGroupId),
+			},
+		},
+	}
+
+	pollerResponse, err := nicClient.BeginCreateOrUpdate(ctx, s.serviceConfig.ResourceGroupName, nicName, parameters, nil)
+	if err != nil {
+		return fmt.Errorf("beginning creation or update of network interface: %w", err)
+	}
+
+	resp, err := pollerResponse.PollUntilDone(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("polling network interface creation: %w", err)
+	}
+
+	s.nicID = *resp.Interface.ID
+
 	return nil
 }
