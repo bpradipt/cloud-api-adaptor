@@ -28,7 +28,7 @@ aws() {
 set -x
 
 if [[ "${PODVM_LAUNCHTEMPLATE_NAME}" ]]; then
-	optionals+="-use-lt -aws-lt-name ${PODVM_LAUNCHTEMPLATE_NAME}"
+	optionals+="-use-lt -aws-lt-name ${PODVM_LAUNCHTEMPLATE_NAME} "
 else
 	optionals+="-imageid ${PODVM_AMI_ID} "
 	optionals+="-instance-type ${PODVM_INSTANCE_TYPE:-t3.small} "
