@@ -4,12 +4,17 @@ CLOUD_PROVIDER=${1:-$CLOUD_PROVIDER}
 CRI_RUNTIME_ENDPOINT=${CRI_RUNTIME_ENDPOINT:-/run/peerpod/cri-runtime.sock}
 optionals+=""
 
+# Ensure you add a space before the closing quote (") when updating the optionals
+# example: 
+# following is the correct method: optionals+="-option val "
+# following is the incorrect method: optionals+="-option val"
+
 if [[ -S ${CRI_RUNTIME_ENDPOINT} ]]; then # will skip if socket isn't exist in the container
 	optionals+="-cri-runtime-endpoint ${CRI_RUNTIME_ENDPOINT} "
 fi
 
 if [[ "${PAUSE_IMAGE}" ]]; then
-	optionals+="-pause-image ${PAUSE_IMAGE}"
+	optionals+="-pause-image ${PAUSE_IMAGE} "
 fi
 
 test_vars() {
