@@ -21,6 +21,7 @@ jobs:
           command: validate
           arguments: -syntax-only
           target: qemu-ubuntu.pkr.hcl
+          working_directory: libvirt/image
 
       # build artifact
       - name: Build Artifact
