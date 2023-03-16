@@ -7,6 +7,9 @@ source "qemu" "rhel" {
   headless          = true
   iso_checksum      = "${var.cloud_image_checksum}"
   iso_url           = "${var.cloud_image_url}"
+  machine_type      = "q35"
+  firmware          = "${var.firmware}"
+  use_pflash        = true
   output_directory  = "output"
   qemuargs          = [["-m", "${var.memory}"], ["-smp", "cpus=${var.cpus}"], ["-cdrom", "${var.cloud_init_image}"], ["-serial", "mon:stdio"], ["-cpu", "Cascadelake-Server"]]
   ssh_password      = "${var.ssh_password}"

@@ -28,6 +28,12 @@ variable "cloud_image_url" {
   default = "https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
 }
 
+
+variable "firmware" {
+  type    = string
+  default = "/usr/share/edk2/ovmf/OVMF_CODE.cc.fd"
+}
+
 variable "memory" {
   type    = string
   default = "2048M"
