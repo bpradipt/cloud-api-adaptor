@@ -73,4 +73,20 @@ case $PODVM_DISTRO in
             ;;
 esac
 
+if [ "$CLOUD_PROVIDER" == "azure" ]
+then
+    case $PODVM_DISTRO in
+	centos)
+		#fallthrough
+	        ;&
+	rhel)
+		#fallthrough
+                ;&
+        ubuntu)
+		# Remove the fstab entry to avoid unnecessary bootup delays
+		sed '/azure_resource-part1/d' /etc/fstab
+		;;
+    esac
+fi
+
 exit 0
