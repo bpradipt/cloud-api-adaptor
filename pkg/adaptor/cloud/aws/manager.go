@@ -18,7 +18,7 @@ func (_ *Manager) ParseCmd(flags *flag.FlagSet) {
 	flags.StringVar(&awscfg.AccessKeyId, "aws-access-key-id", "", "Access Key ID, defaults to `AWS_ACCESS_KEY_ID`")
 	flags.StringVar(&awscfg.SecretKey, "aws-secret-key", "", "Secret Key, defaults to `AWS_SECRET_ACCESS_KEY`")
 	flags.StringVar(&awscfg.Region, "aws-region", "", "Region")
-	flags.StringVar(&awscfg.LoginProfile, "aws-profile", "test", "AWS Login Profile")
+	flags.StringVar(&awscfg.LoginProfile, "aws-profile", "", "AWS Login Profile")
 	flags.StringVar(&awscfg.LaunchTemplateName, "aws-lt-name", "kata", "AWS Launch Template Name")
 	flags.BoolVar(&awscfg.UseLaunchTemplate, "use-lt", false, "Use EC2 Launch Template for the Pod VMs")
 	flags.StringVar(&awscfg.ImageId, "imageid", "", "Pod VM ami id")
