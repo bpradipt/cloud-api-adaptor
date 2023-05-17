@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -143,6 +144,41 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 		return nil, err
 	}
 
+	if p.serviceConfig.UsePublicIP {
+		describeInput := &ec2.DescribeInstancesInput{
+			InstanceIds: []string{instanceID},
+		}
+		// Create a waiter
+		waiter := ec2.NewInstanceRunningWaiter(p.ec2Client)
+		// Wait for the instance to be running
+		err = waiter.Wait(context.TODO(), describeInput, 120*time.Second)
+		if err != nil {
+			logger.Printf("failed to wait for the instance to be up: %v ", err)
+			return nil, err
+		}
+
+		describeOutput, err := p.ec2Client.DescribeInstances(ctx, describeInput)
+		if err != nil {
+			logger.Printf("Unable to describe the instance ")
+			return nil, err
+		}
+
+		publicIP := describeOutput.Reservations[0].Instances[0].PublicIpAddress
+		if publicIP == nil {
+			return nil, fmt.Errorf("public IP is nil")
+		}
+
+		logger.Printf("public podNodeIP (%s)", *publicIP)
+
+		ip := net.ParseIP(*publicIP)
+		if ip == nil {
+			return nil, fmt.Errorf("failed to parse public pod node IP %q", *publicIP)
+		}
+
+		ips[0] = ip
+
+	}
+
 	instance := &cloud.Instance{
 		ID:   instanceID,
 		Name: instanceName,
@@ -158,6 +194,8 @@ func (p *awsProvider) DeleteInstance(ctx context.Context, instanceID string) err
 			instanceID,
 		},
 	}
+
+	logger.Printf("Deleting instance (%s)", instanceID)
 
 	resp, err := p.ec2Client.TerminateInstances(ctx, terminateInput)
 

@@ -32,6 +32,7 @@ type Config struct {
 	SubnetId           string
 	SecurityGroupIds   securityGroupIds
 	UseLaunchTemplate  bool
+	UsePublicIP        bool
 }
 
 func (c Config) Redact() Config {
