@@ -41,6 +41,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	ccv1alpha1 "github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/api/v1alpha1"
+	// import admissionv1 for mutating webhook
 )
 
 const (
@@ -48,6 +49,7 @@ const (
 	CloudApiAdaptorImageEnvName = "RELATED_IMAGE_CAA"
 	DefaultCloudApiAdaptorImage = "quay.io/confidential-containers/cloud-api-adaptor"
 	defaultNodeSelectorLabel    = "node-role.kubernetes.io/worker"
+	webhookName                 = "mwebhook.peerpods.io"
 )
 
 // PeerPodConfigReconciler reconciles a PeerPodConfig object
@@ -66,6 +68,7 @@ type PeerPodConfigReconciler struct {
 //+kubebuilder:rbac:groups="",resources=configmaps,verbs=create;get;update;list;watch
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=create;get;update;list;watch
 //+kubebuilder:rbac:groups="";machineconfiguration.openshift.io,resources=nodes;machineconfigs;machineconfigpools;containerruntimeconfigs;pods;services;services/finalizers;endpoints;persistentvolumeclaims;events;configmaps;secrets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations,verbs=get;list;watch;create;update;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -94,6 +97,12 @@ func (r *PeerPodConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// Error reading the object - requeue the request.
 		return ctrl.Result{}, err
 	}
+
+	/*
+		if err := r.createMutatingWebhookConfig(); err != nil {
+			return ctrl.Result{}, err
+		}
+	*/
 
 	if err := r.advertiseExtendedResources(); err != nil {
 		return ctrl.Result{}, err
@@ -292,6 +301,183 @@ func (r *PeerPodConfigReconciler) getNodesWithLabels(nodeLabels map[string]strin
 	}
 	return nodes, nil
 }
+
+/*
+func (r *PeerPodConfigReconciler) createMutatingWebhookConfig() error {
+	// Define webhook path
+	webhookPath := "/mutate-v1-pod"
+
+	// Add failure policy
+	failurePolicy := admissionv1.Fail
+
+	// Add side effect
+	sideEffect := admissionv1.SideEffectClassNone
+
+	// Add list of namespaces to exclude
+	namespacesToExclude := []string{
+		"peer-pods-webhook-system",
+		"openshift-sandboxed-containers-operator",
+		"openshift",
+		"openshift-apiserver",
+		"openshift-apiserver-operator",
+		"openshift-authentication",
+		"openshift-authentication-operator",
+		"openshift-cloud-controller-manager",
+		"openshift-cloud-controller-manager-operator",
+		"openshift-cloud-credential-operator",
+		"openshift-cloud-network-config-controller",
+		"openshift-cluster-csi-drivers",
+		"openshift-cluster-machine-approver",
+		"openshift-cluster-node-tuning-operator",
+		"openshift-cluster-samples-operator",
+		"openshift-cluster-storage-operator",
+		"openshift-cluster-version",
+		"openshift-config",
+		"openshift-config-managed",
+		"openshift-config-operator",
+		"openshift-console",
+		"openshift-console-operator",
+		"openshift-console-user-settings",
+		"openshift-controller-manager",
+		"openshift-controller-manager-operator",
+		"openshift-dns",
+		"openshift-dns-operator",
+		"openshift-etcd",
+		"openshift-etcd-operator",
+		"openshift-host-network",
+		"openshift-image-registry",
+		"openshift-infra",
+		"openshift-ingress",
+		"openshift-ingress-canary",
+		"openshift-ingress-operator",
+		"openshift-insights",
+		"openshift-kni-infra",
+		"openshift-kube-apiserver",
+		"openshift-kube-apiserver-operator",
+		"openshift-kube-controller-manager",
+		"openshift-kube-scheduler",
+		"openshift-kube-scheduler-operator",
+		"openshift-kube-storage-version-migrator",
+		"openshift-kube-storage-version-migrator-operator",
+		"openshift-machine-api",
+		"openshift-machine-config-operator",
+		"openshift-marketplace",
+		"openshift-monitoring",
+		"openshift-multus",
+		"openshift-network-diagnostics",
+		"openshift-network-operator",
+		"openshift-node",
+		"openshift-nutanix-infra",
+		"openshift-oauth-apiserver",
+		"openshift-openstack-infra",
+		"openshift-operator-lifecycle-manager",
+		"openshift-operators",
+		"openshift-ovirt-infra",
+		"openshift-ovn-kubernetes",
+		"openshift-route-controller-manager",
+		"openshift-service-ca",
+		"openshift-service-ca-operator",
+		"openshift-user-workload-monitoring",
+		"openshift-vsphere-infra",
+		"kube-system",
+		"kube-node-lease",
+	}
+
+	svcNamespace := os.Getenv("PEERPODS_NAMESPACE")
+
+	// Create the webhook service
+	webhookService := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "controller-manager-service",
+			Namespace: svcNamespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Port:       443,
+					TargetPort: intstr.FromInt(9443),
+				},
+			},
+			Selector: map[string]string{
+				"control-plane": "controller-manager",
+			},
+		},
+	}
+
+	// Create webhook service object
+	if err := r.Client.Create(context.Background(), webhookService); err != nil {
+		// Check if the service already exists
+		if !k8serrors.IsAlreadyExists(err) {
+			r.Log.Error(err, "Failed to create mutating webhook service")
+			return err
+		}
+	}
+
+	// Add mutating webhook configuration
+	mutatingWebhookConfig := &admissionv1.MutatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "mutating-webhook-configuration",
+		},
+		Webhooks: []admissionv1.MutatingWebhook{
+			{
+				Name: webhookName,
+				ClientConfig: admissionv1.WebhookClientConfig{
+					Service: &admissionv1.ServiceReference{
+						Name:      "controller-manager-service",
+						Namespace: svcNamespace,
+						Path:      &webhookPath,
+					},
+				},
+				// Add rules
+				Rules: []admissionv1.RuleWithOperations{
+					{
+						Operations: []admissionv1.OperationType{
+							admissionv1.Create,
+							admissionv1.Update,
+						},
+						Rule: admissionv1.Rule{
+							APIGroups:   []string{""},
+							APIVersions: []string{"v1"},
+							Resources:   []string{"pods"},
+						},
+					},
+				},
+				// Add failure policy
+				FailurePolicy: &failurePolicy,
+				// Add side effects
+				SideEffects: &sideEffect,
+				// Add admission review versions
+				AdmissionReviewVersions: []string{"v1"},
+				// Add namespace selector using matchExpressions
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchExpressions: []metav1.LabelSelectorRequirement{
+						{
+							Key:      "kubernetes.io/metadata.name",
+							Operator: metav1.LabelSelectorOpNotIn,
+							// Take values from a predefined list
+							Values: namespacesToExclude,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Check if MutatingWebhookConfiguration object already exists
+	if err := r.Client.Get(context.Background(), types.NamespacedName{Name: mutatingWebhookConfig.Name}, &admissionv1.MutatingWebhookConfiguration{}); err == nil {
+		r.Log.Info("MutatingWebhookConfiguration object already exists")
+		return nil
+	}
+
+	// Create MutatingWebhookConfiguration object
+	if err := r.Client.Create(context.Background(), mutatingWebhookConfig); err != nil {
+		r.Log.Error(err, "Failed to create MutatingWebhookConfiguration object")
+		return err
+	}
+
+	return nil
+}
+*/
 
 func (r *PeerPodConfigReconciler) advertiseExtendedResources() error {
 

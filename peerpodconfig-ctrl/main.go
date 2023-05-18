@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"os"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -29,9 +30,13 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	confidentialcontainersorgv1alpha1 "github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/api/v1alpha1"
 	"github.com/confidential-containers/cloud-api-adaptor/peerpodconfig-ctrl/controllers"
+
+	// import webhook package
+	ppwebhook "github.com/confidential-containers/cloud-api-adaptor/webhook/pkg/mutating_webhook"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -94,6 +99,21 @@ func main() {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
+
+	//Specify TLS cert and key
+	//Default certDir := "/tmp/k8s-webhook-server/serving-certs"
+	//certName := "ppwebhook-tls.crt"
+	//keyName := "ppwebhook-tls.key"
+
+	//Specify server options
+	//server := mgr.GetWebhookServer()
+	//server.CertName = certName
+	//server.KeyName = keyName
+
+	//Register webhook
+	//server.Register("/mutate-v1-pod", &webhook.Admission{Handler: &ppwebhook.PodMutator{Client: mgr.GetClient()}})
+
+	mgr.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{Handler: &ppwebhook.PodMutator{Client: mgr.GetClient()}})
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
