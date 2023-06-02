@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go/aws/request"
 
 	"github.com/confidential-containers/cloud-api-adaptor/pkg/adaptor/cloud"
 	"github.com/confidential-containers/cloud-api-adaptor/pkg/util"
@@ -141,6 +143,53 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 	if err != nil {
 		logger.Printf("failed to get IPs for the instance : %v ", err)
 		return nil, err
+	}
+
+	// Check if UsePublicIP is set to true
+	if p.serviceConfig.UsePublicIP {
+		// Add describe instance input
+		describeInstanceInput := &ec2.DescribeInstancesInput{
+			InstanceIds: []string{instanceID},
+		}
+
+		// Create New InstanceRunningWaiter
+		waiter := ec2.NewInstanceRunningWaiter(p.ec2Client)
+
+		// Wait for the instance to be ready using InstanceRunningWaiter
+		err = waiter.Wait(ctx, describeInstanceInput, func(w *request.Waiter) {
+			w.MaxAttempts = 100
+			w.Delay = request.ConstantWaiterDelay(5 * time.Second)
+		})
+		if err != nil {
+			logger.Printf("failed to wait for the instance to be ready : %v ", err)
+			return nil, err
+		}
+		// Add describe instance output
+		describeInstanceOutput, err := p.ec2Client.DescribeInstances(ctx, describeInstanceInput)
+		if err != nil {
+			logger.Printf("failed to describe the instance : %v ", err)
+			return nil, err
+		}
+		// Get the public IP address
+		publicIP := describeInstanceOutput.Reservations[0].Instances[0].PublicIpAddress
+		// Check if the public IP address is nil
+		if publicIP == nil {
+			return nil, fmt.Errorf("public IP address is nil")
+		}
+		// If the public IP address is empty, return an error
+		if *publicIP == "" {
+			return nil, fmt.Errorf("public IP address is empty")
+		}
+
+		// Parse the public IP address
+		publicIPAddr := net.ParseIP(*publicIP)
+		if publicIPAddr == nil {
+			return nil, fmt.Errorf("failed to parse public IP address %q", *publicIP)
+		}
+
+		// Replace the private IP address with the public IP address
+		ips[0] = publicIPAddr
+
 	}
 
 	instance := &cloud.Instance{
