@@ -75,7 +75,7 @@ func getIPs(instance types.Instance) ([]net.IP, error) {
 	return podNodeIPs, nil
 }
 
-func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID string, cloudConfig cloudinit.CloudConfigGenerator) (*cloud.Instance, error) {
+func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID string, cloudConfig cloudinit.CloudConfigGenerator, instanceType string) (*cloud.Instance, error) {
 
 	instanceName := util.GenerateInstanceName(podName, sandboxID, maxInstanceNameLen)
 
@@ -86,6 +86,25 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 
 	//Convert userData to base64
 	userDataEnc := base64.StdEncoding.EncodeToString([]byte(userData))
+
+	// Check if instanceType is empty
+	// If it's not empty, it means it's set via the pod annotation
+	if instanceType == "" {
+		// Set instanceType to default instance type if instanceType is empty
+		instanceType = p.serviceConfig.InstanceType
+	}
+
+	// If instanceTypes is empty and instanceType is not default instance type, return error
+	if len(p.serviceConfig.InstanceTypes) == 0 && instanceType != p.serviceConfig.InstanceType {
+		return nil, fmt.Errorf("instance type %q is not supported.", instanceType)
+	}
+
+	// Check if instanceType is among the supported instance types only if instanceTypes is not empty.
+	if len(p.serviceConfig.InstanceTypes) > 0 {
+		if !util.Contains(p.serviceConfig.InstanceTypes, instanceType) {
+			return nil, fmt.Errorf("instance type %q is not supported", instanceType)
+		}
+	}
 
 	var input *ec2.RunInstancesInput
 

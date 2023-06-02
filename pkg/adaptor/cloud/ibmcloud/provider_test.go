@@ -105,7 +105,7 @@ func TestCreateInstance(t *testing.T) {
 		serviceConfig: &Config{},
 	}
 
-	instance, err := provider.CreateInstance(context.Background(), "pod1", "999", &mockCloudConfig{})
+	instance, err := provider.CreateInstance(context.Background(), "pod1", "999", &mockCloudConfig{}, "t2.small")
 
 	assert.NoError(t, err)
 	assert.NotNil(t, instance)

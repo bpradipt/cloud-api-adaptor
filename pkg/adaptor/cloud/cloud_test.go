@@ -23,7 +23,7 @@ import (
 
 type mockProvider struct{}
 
-func (p *mockProvider) CreateInstance(ctx context.Context, podName, sandboxID string, cloudConfig cloudinit.CloudConfigGenerator) (*Instance, error) {
+func (p *mockProvider) CreateInstance(ctx context.Context, podName, sandboxID string, cloudConfig cloudinit.CloudConfigGenerator, instanceType string) (*Instance, error) {
 	return &Instance{
 		Name: "abc",
 		ID:   fmt.Sprintf("%s-%.8s", podName, sandboxID),
