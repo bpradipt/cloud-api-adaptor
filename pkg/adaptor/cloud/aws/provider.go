@@ -194,19 +194,12 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 		// Create New InstanceRunningWaiter
 		waiter := ec2.NewInstanceRunningWaiter(p.ec2Client)
 
+		// Wait for instance to be ready before getting the public IP address
 		err := waiter.Wait(ctx, describeInstanceInput, maxWaitTime)
 		if err != nil {
 			logger.Printf("failed to wait for the instance to be ready : %v ", err)
 			return nil, err
 		}
-
-		/*
-			err = WaitForInstanceRunning(ctx, waiter, describeInstanceInput)
-			if err != nil {
-				logger.Printf("failed to wait for instance running : %v ", err)
-				return nil, err
-			}
-		*/
 
 		// Add describe instance output
 		describeInstanceOutput, err := p.ec2Client.DescribeInstances(ctx, describeInstanceInput)
