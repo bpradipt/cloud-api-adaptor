@@ -171,6 +171,14 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 		},
 	}
 
+	// Add custom tags (k=v) from serviceConfig.Tags to the instance
+	for k, v := range p.serviceConfig.Tags {
+		tagInput.Tags = append(tagInput.Tags, types.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
+	}
+
 	_, err = p.ec2Client.CreateTags(ctx, tagInput)
 	if err != nil {
 		logger.Printf("Adding tags to the instance failed with error: %s", err)
