@@ -1,0 +1,40 @@
+// (C) Copyright Confidential Containers Contributors
+// SPDX-License-Identifier: Apache-2.0
+
+package aws
+
+import (
+	"context"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+)
+
+// Add max WaitTime for DescribeInstances
+const (
+	maxWaitTime = 120 * time.Second
+)
+
+type InstanceRunningWaiter interface {
+	Wait(ctx context.Context, params *ec2.DescribeInstancesInput, maxWaitDur time.Duration, optFns ...func(*ec2.InstanceRunningWaiterOptions)) error
+}
+
+type WrapperInstanceRunningWaiter struct {
+	*ec2.InstanceRunningWaiter
+}
+
+func (w *WrapperInstanceRunningWaiter) Wait(ctx context.Context, params *ec2.DescribeInstancesInput, maxWaitDur time.Duration, optFns ...func(*ec2.InstanceRunningWaiterOptions)) error {
+	// Mock implementation for testing (return immediately)
+	return nil
+}
+
+func WaitForInstanceRunning(ctx context.Context, p InstanceRunningWaiter, describeInstanceInput *ec2.DescribeInstancesInput) error {
+
+	// Wait for the instance to be ready using InstanceRunningWaiter.
+	err := p.Wait(ctx, describeInstanceInput, maxWaitTime)
+	if err != nil {
+		logger.Printf("failed to wait for the instance to be ready : %v ", err)
+		return err
+	}
+	return nil
+}

@@ -15,7 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/aws/aws-sdk-go/aws/request"
 
 	"github.com/confidential-containers/cloud-api-adaptor/pkg/adaptor/cloud"
 	"github.com/confidential-containers/cloud-api-adaptor/pkg/util"
@@ -25,10 +24,31 @@ import (
 var logger = log.New(log.Writer(), "[adaptor/cloud/aws] ", log.LstdFlags|log.Lmsgprefix)
 var errNotReady = errors.New("address not ready")
 
-const maxInstanceNameLen = 63
+const (
+	maxInstanceNameLen = 63
+	// Add maxWaitTime to allow for instance to be ready
+	maxWaitTime = 120 * time.Second
+)
+
+// Make ec2Client a mockable interface
+type ec2Client interface {
+	RunInstances(ctx context.Context,
+		params *ec2.RunInstancesInput,
+		optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error)
+	DescribeInstances(ctx context.Context,
+		params *ec2.DescribeInstancesInput,
+		optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+	TerminateInstances(ctx context.Context,
+		params *ec2.TerminateInstancesInput,
+		optFns ...func(*ec2.Options)) (*ec2.TerminateInstancesOutput, error)
+	CreateTags(ctx context.Context,
+		params *ec2.CreateTagsInput,
+		optFns ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error)
+}
 
 type awsProvider struct {
-	ec2Client     *ec2.Client
+	// Make ec2Client a mockable interface
+	ec2Client     ec2Client
 	serviceConfig *Config
 }
 
@@ -174,15 +194,20 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 		// Create New InstanceRunningWaiter
 		waiter := ec2.NewInstanceRunningWaiter(p.ec2Client)
 
-		// Wait for the instance to be ready using InstanceRunningWaiter
-		err = waiter.Wait(ctx, describeInstanceInput, func(w *request.Waiter) {
-			w.MaxAttempts = 100
-			w.Delay = request.ConstantWaiterDelay(5 * time.Second)
-		})
+		err := waiter.Wait(ctx, describeInstanceInput, maxWaitTime)
 		if err != nil {
 			logger.Printf("failed to wait for the instance to be ready : %v ", err)
 			return nil, err
 		}
+
+		/*
+			err = WaitForInstanceRunning(ctx, waiter, describeInstanceInput)
+			if err != nil {
+				logger.Printf("failed to wait for instance running : %v ", err)
+				return nil, err
+			}
+		*/
+
 		// Add describe instance output
 		describeInstanceOutput, err := p.ec2Client.DescribeInstances(ctx, describeInstanceInput)
 		if err != nil {
