@@ -140,6 +140,28 @@ func (p *azureProvider) createNetworkInterface(ctx context.Context, nicName stri
 	return &resp.Interface, nil
 }
 
+// Method to add tags to the VM
+func (p *azureProvider) addTags(ctx context.Context, vmName string, tags map[string]*string) error {
+	vmClient, err := armcompute.NewVirtualMachinesClient(p.serviceConfig.SubscriptionId, p.azureClient, nil)
+	if err != nil {
+		return fmt.Errorf("creating VM client: %w", err)
+	}
+
+	pollerResponse, err := vmClient.BeginCreateOrUpdate(ctx, p.serviceConfig.ResourceGroupName, vmName, armcompute.VirtualMachine{
+		Tags: tags,
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("beginning VM update: %w", err)
+	}
+
+	_, err = pollerResponse.PollUntilDone(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("waiting for the VM update: %w", err)
+	}
+
+	return nil
+}
+
 func (p *azureProvider) CreateInstance(ctx context.Context, podName, sandboxID string, cloudConfig cloudinit.CloudConfigGenerator, instanceType string) (*cloud.Instance, error) {
 
 	instanceName := util.GenerateInstanceName(podName, sandboxID, maxInstanceNameLen)
@@ -257,6 +279,23 @@ func (p *azureProvider) CreateInstance(ctx context.Context, podName, sandboxID s
 	ips, err := getIPs(vmNIC)
 	if err != nil {
 		logger.Printf("getting IPs for the instance : %v ", err)
+		return nil, err
+	}
+
+	// Add tags to the instance
+	tags := map[string]*string{
+		"Name": to.Ptr(instanceName),
+	}
+
+	// Add custom tags from serviceConfig.Tags to the instance
+	for k, v := range p.serviceConfig.Tags {
+		tags[k] = to.Ptr(v)
+	}
+
+	// Call the addTags method to add tags to the instance
+	err = p.addTags(ctx, instanceID, tags)
+	if err != nil {
+		logger.Printf("adding tags to the instance : %v ", err)
 		return nil, err
 	}
 
