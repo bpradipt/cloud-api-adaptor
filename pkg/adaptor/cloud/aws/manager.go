@@ -32,6 +32,8 @@ func (_ *Manager) ParseCmd(flags *flag.FlagSet) {
 	flags.Var(&awscfg.InstanceTypes, "instance-types", "Instance types to be used for the Pod VMs, comma separated")
 	// Add a key value list parameter to indicate custom tags to be used for the Pod VMs
 	flags.Var(&awscfg.Tags, "tags", "Custom tags (key=value pairs) to be used for the Pod VMs, comma separated")
+	// Add an integer parameter to precreate the number of Pod VMs
+	flags.IntVar(&awscfg.DesiredPoolSize, "desired-pool-size", 0, "Precreated pod VM pool size")
 
 }
 

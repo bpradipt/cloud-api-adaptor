@@ -100,6 +100,33 @@ func (m mockEC2Client) TerminateInstances(ctx context.Context,
 	return &ec2.TerminateInstancesOutput{}, nil
 }
 
+// Create a mock EC2 ModifyInstanceAttribute method
+func (m mockEC2Client) ModifyInstanceAttribute(ctx context.Context,
+	params *ec2.ModifyInstanceAttributeInput,
+	optFns ...func(*ec2.Options)) (*ec2.ModifyInstanceAttributeOutput, error) {
+
+	// Return a mock ModifyInstanceAttributeOutput
+	return &ec2.ModifyInstanceAttributeOutput{}, nil
+}
+
+// Create a mock EC2 StopInstances method
+func (m mockEC2Client) StopInstances(ctx context.Context,
+	params *ec2.StopInstancesInput,
+	optFns ...func(*ec2.Options)) (*ec2.StopInstancesOutput, error) {
+
+	// Return a mock StopInstancesOutput
+	return &ec2.StopInstancesOutput{}, nil
+}
+
+// Create a mock EC2 StartInstances method
+func (m mockEC2Client) StartInstances(ctx context.Context,
+	params *ec2.StartInstancesInput,
+	optFns ...func(*ec2.Options)) (*ec2.StartInstancesOutput, error) {
+
+	// Return a mock StartInstancesOutput
+	return &ec2.StartInstancesOutput{}, nil
+}
+
 // Create a serviceConfig struct without public IP
 var serviceConfig = &Config{
 	Region: "us-east-1",
@@ -143,6 +170,54 @@ var serviceConfigEmptyInstanceTypes = &Config{
 	ImageId: "ami-1234567890abcdef0",
 	// Add InstanceTypes to serviceConfig
 	InstanceTypes: []string{},
+}
+
+// Create cloud.Instance array with 5 instances
+// with ID, Name and IPs net.IP array
+var instances = []cloud.Instance{
+	{
+		ID:   "i-1234567890abcdef0",
+		Name: "test-instance-1",
+		IPs:  []net.IP{net.ParseIP("10.0.0.2")},
+	},
+	// Repeat 4 times
+	{
+		ID:   "i-1234567890abcdef1",
+		Name: "test-instance-2",
+		IPs:  []net.IP{net.ParseIP("10.0.0.3")},
+	},
+	{
+		ID:   "i-1234567890abcdef2",
+		Name: "test-instance-3",
+		IPs:  []net.IP{net.ParseIP("10.0.0.4")},
+	},
+	{
+		ID:   "i-1234567890abcdef3",
+		Name: "test-instance-4",
+		IPs:  []net.IP{net.ParseIP("10.0.0.5")},
+	},
+	{
+		ID:   "i-1234567890abcdef4",
+		Name: "test-instance-5",
+		IPs:  []net.IP{net.ParseIP("10.0.0.6")},
+	},
+}
+
+// Create a serviceConfig to initialize a pool of 5 instances
+var serviceConfigPool = &Config{
+	Region: "us-east-1",
+	// Add instance type to serviceConfig
+	InstanceType: "t2.small",
+	// Add subnet ID to serviceConfig
+	SubnetId: "subnet-1234567890abcdef0",
+	// Add security group ID to serviceConfig
+	SecurityGroupIds: []string{"sg-1234567890abcdef0"},
+	// Add image ID to serviceConfig
+	ImageId: "ami-1234567890abcdef0",
+	// Add DesiredPoolSize to serviceConfig
+	DesiredPoolSize: 5,
+	// Add PreCreatedInstances to serviceConfig
+	PreCreatedInstances: instances,
 }
 
 type mockCloudConfig struct{}
@@ -238,6 +313,31 @@ func TestCreateInstance(t *testing.T) {
 			// Test should return an error
 			wantErr: true,
 		},
+		// Test creating an instance from pre-created instances pool
+		{
+			name: "CreateInstanceFromPreCreatedInstancesPool",
+			// Add fields to test
+			fields: fields{
+				// Add mock EC2 client to fields
+				ec2Client: newMockEC2Client(),
+				// Add serviceConfigPool to fields
+				serviceConfig: serviceConfigPool,
+			},
+			args: args{
+				ctx:          context.Background(),
+				podName:      "podtest",
+				sandboxID:    "123",
+				cloudConfig:  &mockCloudConfig{},
+				instanceType: "t2.small",
+			},
+			want: &cloud.Instance{
+				ID:   "i-1234567890abcdef0",
+				Name: "podvm-podtest-123",
+				IPs:  []net.IP{net.ParseIP("10.0.0.2")},
+			},
+			// Test should not return an error
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -297,6 +397,49 @@ func TestDeleteInstance(t *testing.T) {
 			}
 			if err := p.DeleteInstance(tt.args.ctx, tt.args.instanceID); (err != nil) != tt.wantErr {
 				t.Errorf("awsProvider.DeleteInstance() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestInitializePodVmPool(t *testing.T) {
+	type fields struct {
+		ec2Client     ec2Client
+		serviceConfig *Config
+	}
+	type args struct {
+		ctx          context.Context
+		numInstances int
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		wantErr bool
+	}{
+		// Create a pool of 5 instances
+		{
+			name: "InitializePodVmPool",
+			fields: fields{
+				ec2Client:     newMockEC2Client(),
+				serviceConfig: serviceConfigPool,
+			},
+			args: args{
+				ctx:          context.Background(),
+				numInstances: serviceConfig.DesiredPoolSize,
+			},
+			// Test should not return an error
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &awsProvider{
+				ec2Client:     tt.fields.ec2Client,
+				serviceConfig: tt.fields.serviceConfig,
+			}
+			if err := p.initializePodVmPool(tt.args.ctx, tt.args.numInstances); (err != nil) != tt.wantErr {
+				t.Errorf("awsProvider.initializePodVmPool() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

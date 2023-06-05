@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/confidential-containers/cloud-api-adaptor/pkg/adaptor/cloud"
 	"github.com/confidential-containers/cloud-api-adaptor/pkg/util"
 )
 
@@ -75,6 +76,9 @@ type Config struct {
 	UsePublicIP        bool
 	InstanceTypes      instanceTypes
 	Tags               keyValueFlag
+	DesiredPoolSize    int
+	// Add cloud.Instance array to store the precreated instances
+	PreCreatedInstances []cloud.Instance
 }
 
 func (c Config) Redact() Config {
