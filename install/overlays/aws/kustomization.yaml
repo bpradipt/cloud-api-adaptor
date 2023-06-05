@@ -33,6 +33,10 @@ configMapGenerator:
   #- CERT_KEY="/etc/certificates/client.key" # for TLS
   #- TLS_SKIP_VERIFY="" # for testing only
 ##TLS_SETTINGS
+  #- USE_PUBLICIP="" # Uncomment if you want to use public IP for podvm
+  #- INSTANCE_TYPES="t3.large,t3.xlarge" # Uncomment and update if you want to use different instance types for podvm
+  #- TAGS="" # Uncomment and add key1=value1,key2=value2 etc if you want to use specific tags for podvm
+  #- DESIRED_POOL_SIZE="3" # Uncomment and update if you want to use specific desired pool size for podvm
 
 secretGenerator:
 - name: auth-json-secret

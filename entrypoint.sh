@@ -41,6 +41,10 @@ test_vars AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 [[ "${SSH_KP_NAME}" ]] && optionals+="-keyname ${SSH_KP_NAME} " # if not retrieved from IMDS
 [[ "${AWS_SUBNET_ID}" ]] && optionals+="-subnetid ${AWS_SUBNET_ID} " # if not set retrieved from IMDS
 [[ "${AWS_REGION}" ]] && optionals+="-aws-region ${AWS_REGION} " # if not set retrieved from IMDS
+[[ "${USE_PUBLICIP}" ]] && optionals+="-use-public-ip " #
+[[ "${INSTANCE_TYPES}" ]] && optionals+="-instance-types ${INSTANCE_TYPES} " #
+[[ "${TAGS}" ]] && optionals+="-tags ${TAGS} " #
+[[ "${DESIRED_POOL_SIZE}" ]] && optionals+="-desired-pool-size ${DESIRED_POOL_SIZE} " #
 
 set -x
 exec cloud-api-adaptor aws \
