@@ -43,6 +43,7 @@ aws() {
     [[ "${AWS_SUBNET_ID}" ]] && optionals+="-subnetid ${AWS_SUBNET_ID} " # if not set retrieved from IMDS
     [[ "${AWS_REGION}" ]] && optionals+="-aws-region ${AWS_REGION} "     # if not set retrieved from IMDS
     [[ "${TAGS}" ]] && optionals+="-tags ${TAGS} " # Custom tags applied to pod vm
+    [[ "${POOL_SIZE}" ]] && optionals+="-pool-size ${POOL_SIZE} " #
 
     set -x
     exec cloud-api-adaptor aws \
@@ -59,6 +60,7 @@ azure() {
     [[ "${DISABLECVM}" ]] && optionals+="-disable-cvm "
     [[ "${AZURE_INSTANCE_SIZES}" ]] && optionals+="-instance-sizes ${AZURE_INSTANCE_SIZES} "
     [[ "${TAGS}" ]] && optionals+="-tags ${TAGS} " # Custom tags applied to pod vm
+    [[ "${POOL_SIZE}" ]] && optionals+="-pool-size ${POOL_SIZE} " #
 
     set -x
     exec cloud-api-adaptor azure \
