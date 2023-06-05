@@ -142,13 +142,23 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 
 		logger.Printf("Using instance(%s) from precreated pool for %s", instance.ID, instanceName)
 
-		// Modify the instance attribute to set the instance id, shutdown behaviour and userData
+		// Modify the instance attribute to set the instance id and shutdown behaviour
 		_, err := p.ec2Client.ModifyInstanceAttribute(ctx, &ec2.ModifyInstanceAttributeInput{
 			InstanceId: aws.String(instance.ID),
 			// Update the instance shutdown behaviour to terminate
 			InstanceInitiatedShutdownBehavior: &types.AttributeValue{
 				Value: aws.String("terminate"),
 			},
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		// Different attribute types need to be handled separately
+
+		// Modify the instance attribute to set userData
+		_, err = p.ec2Client.ModifyInstanceAttribute(ctx, &ec2.ModifyInstanceAttributeInput{
+			InstanceId: aws.String(instance.ID),
 			// Update the instance userData
 			UserData: &types.BlobAttributeValue{
 				Value: []byte(userDataEnc),
