@@ -200,6 +200,51 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 			return nil, err
 		}
 
+		// Check if UsePublicIP is set to true
+		if p.serviceConfig.UsePublicIP {
+			// Add describe instance input
+			describeInstanceInput := &ec2.DescribeInstancesInput{
+				InstanceIds: []string{instance.ID},
+			}
+
+			// Create New InstanceRunningWaiter
+			waiter := ec2.NewInstanceRunningWaiter(p.ec2Client)
+
+			// Wait for instance to be ready before getting the public IP address
+			err := waiter.Wait(ctx, describeInstanceInput, maxWaitTime)
+			if err != nil {
+				logger.Printf("failed to wait for the instance to be ready : %v ", err)
+				return nil, err
+			}
+
+			// Add describe instance output
+			describeInstanceOutput, err := p.ec2Client.DescribeInstances(ctx, describeInstanceInput)
+			if err != nil {
+				logger.Printf("failed to describe the instance : %v ", err)
+				return nil, err
+			}
+			// Get the public IP address
+			publicIP := describeInstanceOutput.Reservations[0].Instances[0].PublicIpAddress
+			// Check if the public IP address is nil
+			if publicIP == nil {
+				return nil, fmt.Errorf("public IP address is nil")
+			}
+			// If the public IP address is empty, return an error
+			if *publicIP == "" {
+				return nil, fmt.Errorf("public IP address is empty")
+			}
+
+			// Parse the public IP address
+			publicIPAddr := net.ParseIP(*publicIP)
+			if publicIPAddr == nil {
+				return nil, fmt.Errorf("failed to parse public IP address %q", *publicIP)
+			}
+
+			// Replace the IPs []net.IP array first element in the instance struct with the public IP address
+			instance.IPs[0] = publicIPAddr
+
+		}
+
 		// Log the instance struct
 		logger.Printf("Instance details from the pool: %#v", instance)
 
