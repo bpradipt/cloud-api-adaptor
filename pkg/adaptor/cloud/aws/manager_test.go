@@ -5,6 +5,7 @@ package aws
 
 import (
 	"flag"
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -89,10 +90,110 @@ func TestManager_ParseCmd(t *testing.T) {
 			// Set the command-line arguments
 			flags.Parse(test.args)
 
-			// Check if the expected values match the actual values
-			if !reflect.DeepEqual(awscfg, test.expected) {
+			// Compare the expected and actual values using comparestructs
+			if !comparestructs(test.expected, awscfg) {
 				t.Errorf("Expected config: %+v, but got: %+v", test.expected, awscfg)
 			}
+
+			//if !reflect.DeepEqual(awscfg, test.expected) {
+			//	t.Errorf("Expected config: %+v, but got: %+v", test.expected, awscfg)
+			//}
+			// Delete the flag set
+			flags = nil
 		})
 	}
+}
+
+// Add a comparestructs function to compare the expected and actual values of the Config struct
+// This is needed because the reflect.DeepEqual() function does not work with maps
+// Print the expected and actual values to the console if they do not match
+func comparestructs(expected, actual Config) bool {
+	if expected.AccessKeyId != actual.AccessKeyId {
+		// Print the expected and actual values to the console if they do not match
+		fmt.Printf("Expected AccessKeyId: %s, but got: %s\n", expected.AccessKeyId, actual.AccessKeyId)
+		return false
+	}
+	if expected.SecretKey != actual.SecretKey {
+		// Print the expected and actual values to the console if they do not match
+		fmt.Printf("Expected SecretKey: %s, but got: %s\n", expected.SecretKey, actual.SecretKey)
+		return false
+	}
+	if expected.Region != actual.Region {
+		// Print the expected and actual values to the console if they do not match
+		fmt.Printf("Expected Region: %s, but got: %s\n", expected.Region, actual.Region)
+		return false
+	}
+	if expected.LoginProfile != actual.LoginProfile {
+		// Print the expected and actual values to the console if they do not match
+		fmt.Printf("Expected LoginProfile: %s, but got: %s\n", expected.LoginProfile, actual.LoginProfile)
+		return false
+	}
+	if expected.LaunchTemplateName != actual.LaunchTemplateName {
+		// Print the expected and actual values to the console if they do not match
+		fmt.Printf("Expected LaunchTemplateName: %s, but got: %s\n", expected.LaunchTemplateName, actual.LaunchTemplateName)
+		return false
+	}
+	if expected.UseLaunchTemplate != actual.UseLaunchTemplate {
+		// Print the expected and actual values to the console if they do not match
+		fmt.Printf("Expected UseLaunchTemplate: %t, but got: %t\n", expected.UseLaunchTemplate, actual.UseLaunchTemplate)
+		return false
+
+	}
+	if expected.ImageId != actual.ImageId {
+		// Print the expected and actual values to the console if they do not match
+		fmt.Printf("Expected ImageId: %s, but got: %s\n", expected.ImageId, actual.ImageId)
+		return false
+	}
+	if expected.InstanceType != actual.InstanceType {
+		// Print the expected and actual values to the console if they do not match
+		fmt.Printf("Expected InstanceType: %s, but got: %s\n", expected.InstanceType, actual.InstanceType)
+		return false
+	}
+	if !reflect.DeepEqual(expected.SecurityGroupIds, actual.SecurityGroupIds) {
+		// Print the expected and actual values to the console if they do not match
+		fmt.Printf("Expected SecurityGroupIds: %s, but got: %s\n", expected.SecurityGroupIds, actual.SecurityGroupIds)
+		return false
+	}
+	if expected.KeyName != actual.KeyName {
+		// Print the expected and actual values to the console if they do not match
+		fmt.Printf("Expected KeyName: %s, but got: %s\n", expected.KeyName, actual.KeyName)
+		return false
+	}
+	if expected.SubnetId != actual.SubnetId {
+		// Print the expected and actual values to the console if they do not match
+		fmt.Printf("Expected SubnetId: %s, but got: %s\n", expected.SubnetId, actual.SubnetId)
+		return false
+	}
+	if expected.UsePublicIP != actual.UsePublicIP {
+		// Print the expected and actual values to the console if they do not match
+		fmt.Printf("Expected UsePublicIP: %t, but got: %t\n", expected.UsePublicIP, actual.UsePublicIP)
+		return false
+	}
+	if !reflect.DeepEqual(expected.InstanceTypes, actual.InstanceTypes) {
+		// Print the expected and actual values to the console if they do not match
+		fmt.Printf("Expected InstanceTypes: %s, but got: %s\n", expected.InstanceTypes, actual.InstanceTypes)
+		return false
+	}
+
+	// DeepEqual() does not work with maps
+	// Compare the length of the expected and actual values of the Tags map.
+	if len(expected.Tags) != len(actual.Tags) {
+		// Print the expected and actual values to the console if they do not match
+		fmt.Printf("Expected length of Tags: %s, but got: %s\n", expected.Tags, actual.Tags)
+		return false
+	}
+	for key, value := range expected.Tags {
+		if actualValue, ok := actual.Tags[key]; !ok || actualValue != value {
+			// Print the expected and actual values to the console if they do not match
+			fmt.Printf("Expected Tags: %s, but got: %s\n", expected.Tags, actual.Tags)
+			return false
+		}
+	}
+
+	if expected.DesiredPoolSize != actual.DesiredPoolSize {
+		// Print the expected and actual values to the console if they do not match
+		fmt.Printf("Expected DesiredPoolSize: %d, but got: %d\n", expected.DesiredPoolSize, actual.DesiredPoolSize)
+		return false
+	}
+	return true
 }

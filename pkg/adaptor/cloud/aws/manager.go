@@ -16,6 +16,10 @@ type Manager struct{}
 func (_ *Manager) ParseCmd(flags *flag.FlagSet) {
 
 	awscfg.Tags = make(map[string]string)
+	// Initialize the InstanceTypes list
+	awscfg.InstanceTypes = make([]string, 0)
+	// Initialize the SecurityGroupIds list
+	awscfg.SecurityGroupIds = make([]string, 0)
 
 	flags.StringVar(&awscfg.AccessKeyId, "aws-access-key-id", "", "Access Key ID, defaults to `AWS_ACCESS_KEY_ID`")
 	flags.StringVar(&awscfg.SecretKey, "aws-secret-key", "", "Secret Key, defaults to `AWS_SECRET_ACCESS_KEY`")

@@ -119,6 +119,9 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 	// cloud.Instance var
 	var instance cloud.Instance
 
+	// Public IP address
+	var publicIPAddr net.IP
+
 	instanceName := util.GenerateInstanceName(podName, sandboxID, maxInstanceNameLen)
 
 	userData, err := cloudConfig.Generate()
@@ -199,56 +202,8 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 		if err != nil {
 			return nil, err
 		}
-
-		// Check if UsePublicIP is set to true
-		if p.serviceConfig.UsePublicIP {
-			// Add describe instance input
-			describeInstanceInput := &ec2.DescribeInstancesInput{
-				InstanceIds: []string{instance.ID},
-			}
-
-			// Create New InstanceRunningWaiter
-			waiter := ec2.NewInstanceRunningWaiter(p.ec2Client)
-
-			// Wait for instance to be ready before getting the public IP address
-			err := waiter.Wait(ctx, describeInstanceInput, maxWaitTime)
-			if err != nil {
-				logger.Printf("failed to wait for the instance to be ready : %v ", err)
-				return nil, err
-			}
-
-			// Add describe instance output
-			describeInstanceOutput, err := p.ec2Client.DescribeInstances(ctx, describeInstanceInput)
-			if err != nil {
-				logger.Printf("failed to describe the instance : %v ", err)
-				return nil, err
-			}
-			// Get the public IP address
-			publicIP := describeInstanceOutput.Reservations[0].Instances[0].PublicIpAddress
-			// Check if the public IP address is nil
-			if publicIP == nil {
-				return nil, fmt.Errorf("public IP address is nil")
-			}
-			// If the public IP address is empty, return an error
-			if *publicIP == "" {
-				return nil, fmt.Errorf("public IP address is empty")
-			}
-
-			// Parse the public IP address
-			publicIPAddr := net.ParseIP(*publicIP)
-			if publicIPAddr == nil {
-				return nil, fmt.Errorf("failed to parse public IP address %q", *publicIP)
-			}
-
-			// Replace the IPs []net.IP array first element in the instance struct with the public IP address
-			instance.IPs[0] = publicIPAddr
-
-		}
-
 		// Log the instance struct
 		logger.Printf("Instance details from the pool: %#v", instance)
-
-		return &instance, nil
 
 	} else {
 		// Precreated instances are not available. So create a new instance
@@ -338,59 +293,26 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 			return nil, err
 		}
 
-		// Check if UsePublicIP is set to true
-		if p.serviceConfig.UsePublicIP {
-			// Add describe instance input
-			describeInstanceInput := &ec2.DescribeInstancesInput{
-				InstanceIds: []string{instanceID},
-			}
-
-			// Create New InstanceRunningWaiter
-			waiter := ec2.NewInstanceRunningWaiter(p.ec2Client)
-
-			// Wait for instance to be ready before getting the public IP address
-			err := waiter.Wait(ctx, describeInstanceInput, maxWaitTime)
-			if err != nil {
-				logger.Printf("failed to wait for the instance to be ready : %v ", err)
-				return nil, err
-			}
-
-			// Add describe instance output
-			describeInstanceOutput, err := p.ec2Client.DescribeInstances(ctx, describeInstanceInput)
-			if err != nil {
-				logger.Printf("failed to describe the instance : %v ", err)
-				return nil, err
-			}
-			// Get the public IP address
-			publicIP := describeInstanceOutput.Reservations[0].Instances[0].PublicIpAddress
-			// Check if the public IP address is nil
-			if publicIP == nil {
-				return nil, fmt.Errorf("public IP address is nil")
-			}
-			// If the public IP address is empty, return an error
-			if *publicIP == "" {
-				return nil, fmt.Errorf("public IP address is empty")
-			}
-
-			// Parse the public IP address
-			publicIPAddr := net.ParseIP(*publicIP)
-			if publicIPAddr == nil {
-				return nil, fmt.Errorf("failed to parse public IP address %q", *publicIP)
-			}
-
-			// Replace the private IP address with the public IP address
-			ips[0] = publicIPAddr
-
-		}
-
-		instance := &cloud.Instance{
-			ID:   instanceID,
-			Name: instanceName,
-			IPs:  ips,
-		}
-
-		return instance, nil
+		instance.ID = instanceID
+		instance.Name = instanceName
+		instance.IPs = ips
 	}
+
+	// Check if UsePublicIP is set to true
+	if p.serviceConfig.UsePublicIP {
+
+		// Get the public IP address of the instance
+		publicIPAddr, err = p.getPublicIP(ctx, instance.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Replace the IPs []net.IP array first element in the instance struct with the public IP address
+		instance.IPs[0] = publicIPAddr
+
+	}
+	return &instance, nil
+
 }
 
 func (p *awsProvider) DeleteInstance(ctx context.Context, instanceID string) error {
@@ -529,4 +451,52 @@ func (p *awsProvider) initializePodVmPool(ctx context.Context, numInstances int)
 	p.serviceConfig.PreCreatedInstances = instances
 
 	return nil
+}
+
+// Add a method to get public IP address of the instance
+// Take the instance id as an argument
+// Return the public IP address as a string
+func (p *awsProvider) getPublicIP(ctx context.Context, instanceID string) (net.IP, error) {
+	// Add describe instance input
+	describeInstanceInput := &ec2.DescribeInstancesInput{
+		InstanceIds: []string{instanceID},
+	}
+
+	// Create New InstanceRunningWaiter
+	waiter := ec2.NewInstanceRunningWaiter(p.ec2Client)
+
+	// Wait for instance to be ready before getting the public IP address
+	err := waiter.Wait(ctx, describeInstanceInput, maxWaitTime)
+	if err != nil {
+		logger.Printf("failed to wait for the instance to be ready : %v ", err)
+		return nil, err
+	}
+
+	// Add describe instance output
+	describeInstanceOutput, err := p.ec2Client.DescribeInstances(ctx, describeInstanceInput)
+	if err != nil {
+		logger.Printf("failed to describe the instance : %v ", err)
+		return nil, err
+	}
+	// Get the public IP address
+	publicIP := describeInstanceOutput.Reservations[0].Instances[0].PublicIpAddress
+
+	// Check if the public IP address is nil
+	if publicIP == nil {
+		return nil, fmt.Errorf("public IP address is nil")
+	}
+	// If the public IP address is empty, return an error
+	if *publicIP == "" {
+		return nil, fmt.Errorf("public IP address is empty")
+	}
+
+	logger.Printf("public IP address of the instance %s is %s", instanceID, *publicIP)
+
+	// Parse the public IP address
+	publicIPAddr := net.ParseIP(*publicIP)
+	if publicIPAddr == nil {
+		return nil, fmt.Errorf("failed to parse public IP address %q", *publicIP)
+	}
+
+	return publicIPAddr, nil
 }
