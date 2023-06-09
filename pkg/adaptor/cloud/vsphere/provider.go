@@ -76,7 +76,7 @@ func checkConfig(config *Config) error {
 
 type VmConfig []types.BaseOptionValue
 
-func (p *vsphereProvider) CreateInstance(ctx context.Context, podName, sandboxID string, cloudConfig cloudinit.CloudConfigGenerator) (*cloud.Instance, error) {
+func (p *vsphereProvider) CreateInstance(ctx context.Context, podName, sandboxID string, cloudConfig cloudinit.CloudConfigGenerator, instanceType string) (*cloud.Instance, error) {
 
 	vmname := util.GenerateInstanceName(podName, sandboxID, maxInstanceNameLen)
 
