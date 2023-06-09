@@ -9,6 +9,8 @@ import (
 
 const (
 	podvmNamePrefix = "podvm"
+	// Defined in webhook/pkg/mutating_webhook/remove-resourcespec.go
+	POD_VM_ANNOTATION_INSTANCE_TYPE = "kata.peerpods.io/instance_type"
 )
 
 func sanitize(input string) string {
@@ -61,4 +63,9 @@ func GetPodName(annotations map[string]string) string {
 func GetPodNamespace(annotations map[string]string) string {
 
 	return annotations[cri.SandboxNamespace]
+}
+
+// Method to get instance type from annotations
+func GetInstanceType(annotations map[string]string) string {
+	return annotations[POD_VM_ANNOTATION_INSTANCE_TYPE]
 }

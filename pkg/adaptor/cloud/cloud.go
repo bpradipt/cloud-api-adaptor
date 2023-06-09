@@ -34,7 +34,7 @@ const (
 var logger = log.New(log.Writer(), "[adaptor/cloud] ", log.LstdFlags|log.Lmsgprefix)
 
 type Provider interface {
-	CreateInstance(ctx context.Context, podName, sandboxID string, cloudConfig cloudinit.CloudConfigGenerator) (instance *Instance, err error)
+	CreateInstance(ctx context.Context, podName, sandboxID string, cloudConfig cloudinit.CloudConfigGenerator, instanceType string) (instance *Instance, err error)
 	DeleteInstance(ctx context.Context, instanceID string) error
 	Teardown() error
 }
@@ -75,6 +75,7 @@ type sandbox struct {
 	instanceName string
 	instanceID   string
 	netNSPath    string
+	instanceType string
 }
 
 func (s *cloudService) addSandbox(sid sandboxID, sandbox *sandbox) error {
@@ -211,6 +212,9 @@ func (s *cloudService) CreateVM(ctx context.Context, req *pb.CreateVMRequest) (r
 		return nil, fmt.Errorf("namespace name %s is missing in annotations", annotations.SandboxNamespace)
 	}
 
+	// Get Pod VM instance type from annotations
+	instanceType := util.GetInstanceType(req.Annotations)
+
 	// TODO: server name is also generated in each cloud provider, and possibly inconsistent
 	serverName := util.GenerateInstanceName(pod, string(sid), 63)
 
@@ -290,6 +294,7 @@ func (s *cloudService) CreateVM(ctx context.Context, req *pb.CreateVMRequest) (r
 		agentProxy:   agentProxy,
 		podNetwork:   podNetworkConfig,
 		cloudConfig:  cloudConfig,
+		instanceType: instanceType,
 	}
 
 	if err := s.addSandbox(sid, sandbox); err != nil {
@@ -316,7 +321,7 @@ func (s *cloudService) StartVM(ctx context.Context, req *pb.StartVMRequest) (res
 		return nil, fmt.Errorf("getting sandbox: %w", err)
 	}
 
-	instance, err := s.provider.CreateInstance(ctx, sandbox.podName, string(sid), sandbox.cloudConfig)
+	instance, err := s.provider.CreateInstance(ctx, sandbox.podName, string(sid), sandbox.cloudConfig, sandbox.instanceType)
 	if err != nil {
 		return nil, fmt.Errorf("creating an instance : %w", err)
 	}
