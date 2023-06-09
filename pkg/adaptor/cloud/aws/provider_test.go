@@ -80,6 +80,38 @@ var serviceConfig = &Config{
 	SecurityGroupIds: []string{"sg-1234567890abcdef0"},
 	// Add image ID to serviceConfig
 	ImageId: "ami-1234567890abcdef0",
+	// Add InstanceTypes to serviceConfig
+	InstanceTypes: []string{"t2.small", "t2.medium"},
+}
+
+// Create a serviceConfig struct with invalid instance type
+var serviceConfigInvalidInstanceType = &Config{
+	Region: "us-east-1",
+	// Add instance type to serviceConfig
+	InstanceType: "t2.small",
+	// Add subnet ID to serviceConfig
+	SubnetId: "subnet-1234567890abcdef0",
+	// Add security group ID to serviceConfig
+	SecurityGroupIds: []string{"sg-1234567890abcdef0"},
+	// Add image ID to serviceConfig
+	ImageId: "ami-1234567890abcdef0",
+	// Add InstanceTypes to serviceConfig
+	InstanceTypes: []string{"t2.large", "t2.medium"},
+}
+
+// Create a serviceConfig with emtpy InstanceTypes
+var serviceConfigEmptyInstanceTypes = &Config{
+	Region: "us-east-1",
+	// Add instance type to serviceConfig
+	InstanceType: "t2.small",
+	// Add subnet ID to serviceConfig
+	SubnetId: "subnet-1234567890abcdef0",
+	// Add security group ID to serviceConfig
+	SecurityGroupIds: []string{"sg-1234567890abcdef0"},
+	// Add image ID to serviceConfig
+	ImageId: "ami-1234567890abcdef0",
+	// Add InstanceTypes to serviceConfig
+	InstanceTypes: []string{},
 }
 
 type mockCloudConfig struct{}
@@ -132,7 +164,101 @@ func TestCreateInstance(t *testing.T) {
 			// Test should not return an error
 			wantErr: false,
 		},
+		// Test creating an instance with invalid instanceType
+		{
+			name: "CreateInstanceInvalidInstanceType",
+			// Add fields to test
+			fields: fields{
+				// Add mock EC2 client to fields
+				ec2Client: newMockEC2Client(),
+				// Add serviceConfigInvalidInstanceType to fields
+				serviceConfig: serviceConfigInvalidInstanceType,
+			},
+			args: args{
+				ctx:          context.Background(),
+				podName:      "podinvalidinstance",
+				sandboxID:    "123",
+				cloudConfig:  &mockCloudConfig{},
+				instanceType: "t2.small",
+			},
+			want: nil,
+			// Test should return an error
+			wantErr: true,
+		},
+		// Test creating an instance with empty instanceTypes and instanceType set to non-default value
+		{
+			name: "CreateInstanceEmptyInstanceTypes",
+			// Add fields to test
+			fields: fields{
+				// Add mock EC2 client to fields
+				ec2Client: newMockEC2Client(),
+				// Add serviceConfigEmptyInstanceTypes to fields
+				serviceConfig: serviceConfigEmptyInstanceTypes,
+			},
+			args: args{
+				ctx:          context.Background(),
+				podName:      "podemptyinstance",
+				sandboxID:    "123",
+				cloudConfig:  &mockCloudConfig{},
+				instanceType: "t2.large",
+			},
+			want: nil,
+			// Test should return an error
+			wantErr: true,
+		},
+		// Test creating an instance with empty instanceTypes and instanceType
+		{
+			name: "CreateInstanceEmptyInstanceTypeAndTypes",
+			// Add fields to test
+			fields: fields{
+				// Add mock EC2 client to fields
+				ec2Client: newMockEC2Client(),
+				// Add serviceConfigEmptyInstanceTypes to fields
+				serviceConfig: serviceConfigEmptyInstanceTypes,
+			},
+			args: args{
+				ctx:          context.Background(),
+				podName:      "podemptyinstance",
+				sandboxID:    "123",
+				cloudConfig:  &mockCloudConfig{},
+				instanceType: "",
+			},
+			want: &cloud.Instance{
+				ID:   "i-1234567890abcdef0",
+				Name: "podvm-podemptyinstance-123",
+				IPs:  []net.IP{net.ParseIP("10.0.0.2")},
+			},
+			// Test should not return an error
+			wantErr: false,
+		},
+		// Test creating an instance with empty instanceType
+		// The instanceType is set to default value
+		{
+			name: "CreateInstanceEmptyInstanceType",
+			// Add fields to test
+			fields: fields{
+				// Add mock EC2 client to fields
+				ec2Client: newMockEC2Client(),
+				// Add serviceConfigEmptyInstanceType to fields
+				serviceConfig: serviceConfig,
+			},
+			args: args{
+				ctx:          context.Background(),
+				podName:      "podemptyinstance",
+				sandboxID:    "123",
+				cloudConfig:  &mockCloudConfig{},
+				instanceType: "",
+			},
+			want: &cloud.Instance{
+				ID:   "i-1234567890abcdef0",
+				Name: "podvm-podemptyinstance-123",
+				IPs:  []net.IP{net.ParseIP("10.0.0.2")},
+			},
+			// Test should not return an error
+			wantErr: false,
+		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
@@ -141,7 +267,7 @@ func TestCreateInstance(t *testing.T) {
 				serviceConfig: tt.fields.serviceConfig,
 			}
 
-			got, err := p.CreateInstance(tt.args.ctx, tt.args.podName, tt.args.sandboxID, tt.args.cloudConfig)
+			got, err := p.CreateInstance(tt.args.ctx, tt.args.podName, tt.args.sandboxID, tt.args.cloudConfig, tt.args.instanceType)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("awsProvider.CreateInstance() error = %v, wantErr %v", err, tt.wantErr)
 				return
