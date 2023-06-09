@@ -194,7 +194,7 @@ type mockProvider struct {
 	secondaryIP string
 }
 
-func (p *mockProvider) CreateInstance(ctx context.Context, podName, sandboxID string, cloudConfig cloudinit.CloudConfigGenerator) (*cloud.Instance, error) {
+func (p *mockProvider) CreateInstance(ctx context.Context, podName, sandboxID string, cloudConfig cloudinit.CloudConfigGenerator, instanceType string) (*cloud.Instance, error) {
 
 	primaryIP := p.primaryIP
 	if primaryIP == "" {

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	cri "github.com/containerd/containerd/pkg/cri/annotations"
+	hypannotations "github.com/kata-containers/kata-containers/src/runtime/virtcontainers/pkg/annotations"
 )
 
 const (
@@ -61,4 +62,9 @@ func GetPodName(annotations map[string]string) string {
 func GetPodNamespace(annotations map[string]string) string {
 
 	return annotations[cri.SandboxNamespace]
+}
+
+// Method to get instance type from annotations
+func GetInstanceTypeFromAnnotation(annotations map[string]string) string {
+	return annotations[hypannotations.MachineType]
 }
