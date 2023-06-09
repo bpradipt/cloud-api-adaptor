@@ -37,8 +37,8 @@ type ec2Client interface {
 		params *ec2.CreateTagsInput,
 		optFns ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error)
 }
-
 type awsProvider struct {
+	// Make ec2Client a mockable interface
 	ec2Client     ec2Client
 	serviceConfig *Config
 }
@@ -98,6 +98,15 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 	//Convert userData to base64
 	userDataEnc := base64.StdEncoding.EncodeToString([]byte(userData))
 
+	logger.Printf("instance type requested %q", instanceType)
+
+	instanceTypeToUse, err := util.VerifyCloudInstanceType(instanceType, p.serviceConfig.InstanceTypes, p.serviceConfig.InstanceType)
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Printf("instance type to be used %q", instanceTypeToUse)
+
 	var input *ec2.RunInstancesInput
 
 	if p.serviceConfig.UseLaunchTemplate {
@@ -114,7 +123,7 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 			MinCount:         aws.Int32(1),
 			MaxCount:         aws.Int32(1),
 			ImageId:          aws.String(p.serviceConfig.ImageId),
-			InstanceType:     types.InstanceType(p.serviceConfig.InstanceType),
+			InstanceType:     types.InstanceType(instanceTypeToUse),
 			SecurityGroupIds: p.serviceConfig.SecurityGroupIds,
 			SubnetId:         aws.String(p.serviceConfig.SubnetId),
 			UserData:         &userDataEnc,
