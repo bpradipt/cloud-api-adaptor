@@ -20,6 +20,17 @@ func (i *securityGroupIds) Set(value string) error {
 	return nil
 }
 
+type instanceTypes []string
+
+func (i *instanceTypes) String() string {
+	return strings.Join(*i, ", ")
+}
+
+func (i *instanceTypes) Set(value string) error {
+	*i = append(*i, strings.Split(value, ",")...)
+	return nil
+}
+
 type Config struct {
 	AccessKeyId        string
 	SecretKey          string
@@ -32,6 +43,7 @@ type Config struct {
 	SubnetId           string
 	SecurityGroupIds   securityGroupIds
 	UseLaunchTemplate  bool
+	InstanceTypes      instanceTypes
 }
 
 func (c Config) Redact() Config {

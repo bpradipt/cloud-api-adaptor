@@ -37,8 +37,8 @@ type ec2Client interface {
 		params *ec2.CreateTagsInput,
 		optFns ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error)
 }
-
 type awsProvider struct {
+	// Make ec2Client a mockable interface
 	ec2Client     ec2Client
 	serviceConfig *Config
 }
@@ -97,6 +97,22 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 
 	//Convert userData to base64
 	userDataEnc := base64.StdEncoding.EncodeToString([]byte(userData))
+
+	logger.Printf("instance type requested %q", instanceType)
+
+	// If instanceType is empty, set instanctType to default. Non-empty instanceType is set via annotation
+	// Or
+	// If instanceTypes is empty and instanceType is not default, set instanceType to default
+	// Or
+	// If instanceTypes is not empty and instanceType is not among the supported instance types, set instanceType to default
+	if instanceType == "" ||
+		len(p.serviceConfig.InstanceTypes) == 0 && instanceType != p.serviceConfig.InstanceType ||
+		len(p.serviceConfig.InstanceTypes) > 0 && !util.Contains(p.serviceConfig.InstanceTypes, instanceType) {
+		// Set instanceType to default instance type
+		instanceType = p.serviceConfig.InstanceType
+		// Log warning message
+		logger.Printf("instance type was empty or not supported. Using default instance type %q", p.serviceConfig.InstanceType)
+	}
 
 	var input *ec2.RunInstancesInput
 

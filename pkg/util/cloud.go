@@ -69,3 +69,13 @@ func GetPodNamespace(annotations map[string]string) string {
 func GetInstanceType(annotations map[string]string) string {
 	return annotations[POD_VM_ANNOTATION_INSTANCE_TYPE]
 }
+
+// Method to check if a string exists in a slice
+func Contains(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
