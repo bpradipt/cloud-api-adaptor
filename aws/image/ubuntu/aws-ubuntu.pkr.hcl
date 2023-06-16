@@ -13,6 +13,7 @@ source "amazon-ebs" "ubuntu" {
   region        = "${var.region}"
   vpc_id        = "${var.vpc_id}"
   subnet_id     = "${var.subnet_id}"
+  #source_ami    =  "ami-0ab1b44c6f212aa45"
   source_ami_filter {
     filters = {
       name                = "ubuntu/images/*ubuntu*focal*"
@@ -58,6 +59,18 @@ build {
     remote_folder = "~"
     inline = [
       "sudo bash ~/copy-files.sh"
+    ]
+  }
+
+  provisioner "file" {
+    source      = "gpu-settings.sh"
+    destination = "~/gpu-settings.sh"
+  }
+
+  provisioner "shell" {
+    remote_folder = "~"
+    inline = [
+      "sudo -E bash ~/gpu-settings.sh"
     ]
   }
 

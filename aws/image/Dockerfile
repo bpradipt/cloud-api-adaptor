@@ -21,6 +21,8 @@ ARG CAA_SRC_REF=""
 ENV CLOUD_PROVIDER ${CLOUD_PROVIDER}
 ENV PODVM_DISTRO ${PODVM_DISTRO}
 
+RUN echo 1
+
 RUN if [ -n "${CAA_SRC}" ]; then \
       rm -rf cloud-api-adaptor && \
       git clone ${CAA_SRC} cloud-api-adaptor;\
@@ -55,8 +57,6 @@ ENV IMAGE_NAME ${IMAGE_NAME}
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && \
      unzip awscliv2.zip && \
      ./aws/install
-
-RUN echo 1
 
 RUN --mount=type=secret,id=AWS_ACCESS_KEY_ID \
     --mount=type=secret,id=AWS_SECRET_ACCESS_KEY \
