@@ -230,3 +230,7 @@ func (p *mockProvider) DeleteInstance(ctx context.Context, instanceID string) er
 func (p *mockProvider) Teardown() error {
 	return nil
 }
+
+func (p *mockProvider) SelectInstanceType(ctx context.Context, vCPU int64, memory int64) (instanceType string, err error) {
+	return "", nil
+}

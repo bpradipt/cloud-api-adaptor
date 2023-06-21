@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"reflect"
 	"testing"
+	"time"
 
 	cri "github.com/containerd/containerd/pkg/cri/annotations"
 	pb "github.com/kata-containers/kata-containers/src/runtime/protocols/hypervisor"
@@ -39,6 +41,10 @@ func (p *mockProvider) DeleteInstance(ctx context.Context, instanceID string) er
 
 func (p *mockProvider) Teardown() error {
 	return nil
+}
+
+func (p *mockProvider) SelectInstanceType(ctx context.Context, vCPU int64, memory int64) (instanceType string, err error) {
+	return "", nil
 }
 
 type mockProxy struct {
@@ -136,4 +142,287 @@ func TestCloudService(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.NotNil(t, res3)
+}
+
+func TestSortInstanceTypesOnMemory(t *testing.T) {
+	type args struct {
+		instanceTypeTupleList []InstanceTypeTuple
+	}
+	tests := []struct {
+		name string
+		args args
+		want []InstanceTypeTuple
+	}{
+
+		// Add test case with instanceTypeTupleList=[{t2.small, 2, 6}, {t2.medium, 4, 8}, {t2.large, 8, 16}]
+		{
+			name: "instanceTypeTupleList=[{t2.small, 2, 6}, {t2.medium, 4, 8}, {t2.large, 8, 16}]",
+			args: args{
+				instanceTypeTupleList: []InstanceTypeTuple{
+					{
+						InstanceType: "t2.small",
+						Vcpu:         2,
+						Memory:       6,
+					},
+					{
+						InstanceType: "t2.medium",
+						Vcpu:         4,
+						Memory:       8,
+					},
+					{
+						InstanceType: "t2.large",
+						Vcpu:         8,
+						Memory:       16,
+					},
+				},
+			},
+			want: []InstanceTypeTuple{
+				{
+					InstanceType: "t2.small",
+					Vcpu:         2,
+					Memory:       6,
+				},
+				{
+					InstanceType: "t2.medium",
+					Vcpu:         4,
+					Memory:       8,
+				},
+				{
+					InstanceType: "t2.large",
+					Vcpu:         8,
+					Memory:       16,
+				},
+			},
+		},
+		// Add test case with instanceTypeTupleList=[{t2.small, 2, 6}, {t2.large, 8, 16}, {t2.medium, 4, 8}]
+		{
+			name: "instanceTypeTupleList=[{t2.small, 2, 6}, {t2.large, 8, 16}, {t2.medium, 4, 8}]",
+			args: args{
+				instanceTypeTupleList: []InstanceTypeTuple{
+					{
+						InstanceType: "t2.small",
+						Vcpu:         2,
+						Memory:       6,
+					},
+					{
+						InstanceType: "t2.large",
+						Vcpu:         8,
+						Memory:       16,
+					},
+					{
+						InstanceType: "t2.medium",
+						Vcpu:         4,
+						Memory:       8,
+					},
+				},
+			},
+			want: []InstanceTypeTuple{
+				{
+					InstanceType: "t2.small",
+					Vcpu:         2,
+					Memory:       6,
+				},
+				{
+					InstanceType: "t2.medium",
+					Vcpu:         4,
+					Memory:       8,
+				},
+				{
+					InstanceType: "t2.large",
+					Vcpu:         8,
+					Memory:       16,
+				},
+			},
+		},
+		// Add test case with instanceTypeTupleList=[{t2.medium, 4, 8}, {t2.small, 2, 6}, {t2.large, 8, 16}]
+		{
+			name: "instanceTypeTupleList=[{t2.medium, 4, 8}, {t2.small, 2, 6}, {t2.large, 8, 16}]",
+			args: args{
+				instanceTypeTupleList: []InstanceTypeTuple{
+					{
+						InstanceType: "t2.medium",
+						Vcpu:         4,
+						Memory:       8,
+					},
+					{
+						InstanceType: "t2.small",
+						Vcpu:         2,
+						Memory:       6,
+					},
+					{
+						InstanceType: "t2.large",
+						Vcpu:         8,
+						Memory:       16,
+					},
+				},
+			},
+			want: []InstanceTypeTuple{
+				{
+					InstanceType: "t2.small",
+					Vcpu:         2,
+					Memory:       6,
+				},
+				{
+					InstanceType: "t2.medium",
+					Vcpu:         4,
+					Memory:       8,
+				},
+				{
+					InstanceType: "t2.large",
+					Vcpu:         8,
+					Memory:       16,
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Add benchmark
+			start := time.Now()
+			if got := SortInstanceTypesOnMemory(tt.args.instanceTypeTupleList); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("SortInstanceTypesOnMemory() = %v, want %v", got, tt.want)
+			}
+			elapsed := time.Since(start)
+			fmt.Printf("SortInstanceTypesOnMemory() took %s\n", elapsed)
+		})
+	}
+}
+
+func TestGetBestFitInstanceType(t *testing.T) {
+	type args struct {
+		sortedInstanceTypesTupleList []InstanceTypeTuple
+		vcpus                        int64
+		memory                       int64
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr bool
+	}{
+		// Add test case with sortedInstanceTypesTupleList=[{t2.small, 2, 6}, {t2.medium, 4, 8}, {t2.large, 8, 16}], vcpus=2, memory=6
+		{
+			name: "sortedInstanceTypesTupleList=[{t2.small, 2, 6}, {t2.medium, 4, 8}, {t2.large, 8, 16}], vcpus=2, memory=6",
+			args: args{
+				sortedInstanceTypesTupleList: []InstanceTypeTuple{
+					{
+						InstanceType: "t2.small",
+						Vcpu:         2,
+						Memory:       6,
+					},
+					{
+						InstanceType: "t2.medium",
+						Vcpu:         4,
+						Memory:       8,
+					},
+					{
+						InstanceType: "t2.large",
+						Vcpu:         8,
+						Memory:       16,
+					},
+				},
+				vcpus:  2,
+				memory: 6,
+			},
+			want:    "t2.small",
+			wantErr: false,
+		},
+		// Add test case with sortedInstanceTypesTupleList=[{t2.small, 2, 6}, {t2.medium, 4, 8}, {t2.large, 8, 16}], vcpus=4, memory=8
+		{
+			name: "sortedInstanceTypesTupleList=[{t2.small, 2, 6}, {t2.medium, 4, 8}, {t2.large, 8, 16}], vcpus=4, memory=8",
+			args: args{
+				sortedInstanceTypesTupleList: []InstanceTypeTuple{
+					{
+						InstanceType: "t2.small",
+						Vcpu:         2,
+						Memory:       6,
+					},
+					{
+						InstanceType: "t2.medium",
+						Vcpu:         4,
+						Memory:       8,
+					},
+					{
+						InstanceType: "t2.large",
+						Vcpu:         8,
+						Memory:       16,
+					},
+				},
+				vcpus:  4,
+				memory: 8,
+			},
+			want:    "t2.medium",
+			wantErr: false,
+		},
+		// Add test case with sortedInstanceTypesTupleList=[{t2.small, 2, 6}, {t2.medium, 4, 8}, {t2.large, 8, 16}], vcpus=4, memory=16
+		{
+			name: "sortedInstanceTypesTupleList=[{t2.small, 2, 6}, {t2.medium, 4, 8}, {t2.large, 8, 16}], vcpus=4, memory=16",
+			args: args{
+				sortedInstanceTypesTupleList: []InstanceTypeTuple{
+					{
+						InstanceType: "t2.small",
+						Vcpu:         2,
+						Memory:       6,
+					},
+					{
+						InstanceType: "t2.medium",
+						Vcpu:         4,
+						Memory:       8,
+					},
+					{
+						InstanceType: "t2.large",
+						Vcpu:         8,
+						Memory:       16,
+					},
+				},
+				vcpus:  4,
+				memory: 16,
+			},
+			want:    "t2.large",
+			wantErr: false,
+		},
+		// Add test case with sortedInstanceTypeTupleList=[{t2.small, 2, 6}, {t2.medium, 4, 8}, {t2.large, 8, 16}], vcpus=4, memory=32
+		{
+			name: "sortedInstanceTypesTupleList=[{t2.small, 2, 6}, {t2.medium, 4, 8}, {t2.large, 8, 16}], vcpus=4, memory=32",
+			args: args{
+				sortedInstanceTypesTupleList: []InstanceTypeTuple{
+					{
+						InstanceType: "t2.small",
+						Vcpu:         2,
+						Memory:       6,
+					},
+					{
+						InstanceType: "t2.medium",
+						Vcpu:         4,
+						Memory:       8,
+					},
+					{
+						InstanceType: "t2.large",
+						Vcpu:         8,
+						Memory:       16,
+					},
+				},
+				vcpus:  4,
+				memory: 32,
+			},
+			want:    "",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Add benchmark
+			start := time.Now()
+			got, err := GetBestFitInstanceType(tt.args.sortedInstanceTypesTupleList, tt.args.vcpus, tt.args.memory)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetBestFitInstanceType() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			elapsed := time.Since(start)
+			fmt.Printf("GetBestFitInstanceType() took %s\n", elapsed)
+			if got != tt.want {
+				t.Errorf("GetBestFitInstanceType() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

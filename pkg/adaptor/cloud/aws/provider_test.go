@@ -5,6 +5,7 @@ package aws
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"reflect"
 	"testing"
@@ -67,6 +68,36 @@ func (m mockEC2Client) TerminateInstances(ctx context.Context,
 
 	// Return a mock TerminateInstancesOutput
 	return &ec2.TerminateInstancesOutput{}, nil
+}
+
+// Create a mock EC2 DescribeInstanceTypes method
+func (m mockEC2Client) DescribeInstanceTypes(ctx context.Context,
+	params *ec2.DescribeInstanceTypesInput,
+	optFns ...func(*ec2.Options)) (*ec2.DescribeInstanceTypesOutput, error) {
+
+	// Take instance type from params
+	instanceType := params.InstanceTypes[0]
+	// Check if instance type is t2.medium, else return an error
+	if !reflect.DeepEqual(instanceType, "t2.medium") {
+		return nil, fmt.Errorf("Unsupported instance type")
+	}
+
+	// Return a mock DescribeInstanceTypesOutput
+	return &ec2.DescribeInstanceTypesOutput{
+		InstanceTypes: []types.InstanceTypeInfo{
+			{
+				InstanceType: instanceType,
+				// Add vCPU info for t2.medium
+				VCpuInfo: &types.VCpuInfo{
+					DefaultVCpus: aws.Int32(2),
+				},
+				// Add memory info for t2.medium
+				MemoryInfo: &types.MemoryInfo{
+					SizeInMiB: aws.Int64(4096),
+				},
+			},
+		},
+	}, nil
 }
 
 // Create a serviceConfig struct without public IP
@@ -317,6 +348,74 @@ func TestDeleteInstance(t *testing.T) {
 			}
 			if err := p.DeleteInstance(tt.args.ctx, tt.args.instanceID); (err != nil) != tt.wantErr {
 				t.Errorf("awsProvider.DeleteInstance() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestgetInstanceTypeInformation(t *testing.T) {
+	type fields struct {
+		ec2Client     ec2Client
+		serviceConfig *Config
+	}
+	type args struct {
+		instanceType string
+	}
+	tests := []struct {
+		name       string
+		fields     fields
+		args       args
+		wantVcpu   int64
+		wantMemory int64
+		wantErr    bool
+	}{
+		// Test getting instance type information for a valid instance type
+		{
+			name: "getInstanceTypeInformationValidInstanceType",
+			fields: fields{
+				ec2Client:     newMockEC2Client(),
+				serviceConfig: serviceConfig,
+			},
+			args: args{
+				instanceType: "t2.medium",
+			},
+			wantVcpu:   2,
+			wantMemory: 4096,
+			// Test should not return an error
+			wantErr: false,
+		},
+		// Test getting instance type information for an invalid instance type
+		{
+			name: "getInstanceTypeInformationInvalidInstanceType",
+			fields: fields{
+				ec2Client:     newMockEC2Client(),
+				serviceConfig: serviceConfig,
+			},
+			args: args{
+				instanceType: "mycustominstance",
+			},
+			wantVcpu:   0,
+			wantMemory: 0,
+			// Test should return an error
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := &awsProvider{
+				ec2Client:     tt.fields.ec2Client,
+				serviceConfig: tt.fields.serviceConfig,
+			}
+			gotVcpu, gotMemory, err := p.getInstanceTypeInformation(tt.args.instanceType)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("awsProvider.getInstanceTypeInformation() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if gotVcpu != tt.wantVcpu {
+				t.Errorf("awsProvider.getInstanceTypeInformation() gotVcpu = %v, want %v", gotVcpu, tt.wantVcpu)
+			}
+			if gotMemory != tt.wantMemory {
+				t.Errorf("awsProvider.getInstanceTypeInformation() gotMemory = %v, want %v", gotMemory, tt.wantMemory)
 			}
 		})
 	}
