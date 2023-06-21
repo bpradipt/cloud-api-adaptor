@@ -97,3 +97,8 @@ func (p *libvirtProvider) DeleteInstance(ctx context.Context, instanceID string)
 func (p *libvirtProvider) Teardown() error {
 	return nil
 }
+
+// Add SelectInstanceType method to select an instance type based on the memory and vcpu requirements
+func (p *libvirtProvider) SelectInstanceType(ctx context.Context, memory int64, vcpu int64) (string, error) {
+	return "", nil
+}

@@ -296,3 +296,8 @@ func (p *ibmcloudVPCProvider) DeleteInstance(ctx context.Context, instanceID str
 func (p *ibmcloudVPCProvider) Teardown() error {
 	return nil
 }
+
+// Add SelectInstanceType method to select an instance type based on the memory and vcpu requirements
+func (p *ibmcloudVPCProvider) SelectInstanceType(ctx context.Context, memory int64, vcpu int64) (string, error) {
+	return "", nil
+}

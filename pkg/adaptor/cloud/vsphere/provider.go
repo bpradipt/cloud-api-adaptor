@@ -406,3 +406,8 @@ func (p *vsphereProvider) Teardown() error {
 	logger.Printf("Logout user %s", p.serviceConfig.UserName)
 	return DeleteGovmomiClient(p.gclient)
 }
+
+// Add SelectInstanceType method to select an instance type based on the memory and vcpu requirements
+func (p *vsphereProvider) SelectInstanceType(ctx context.Context, memory int64, vcpu int64) (string, error) {
+	return "", nil
+}

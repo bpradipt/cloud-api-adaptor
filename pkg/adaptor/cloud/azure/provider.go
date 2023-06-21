@@ -358,3 +358,8 @@ func (p *azureProvider) deleteNetworkInterface(ctx context.Context, nicName stri
 func (p *azureProvider) Teardown() error {
 	return nil
 }
+
+// Add SelectInstanceType method to select an instance type based on the memory and vcpu requirements
+func (p *azureProvider) SelectInstanceType(ctx context.Context, memory int64, vcpu int64) (string, error) {
+	return "", nil
+}

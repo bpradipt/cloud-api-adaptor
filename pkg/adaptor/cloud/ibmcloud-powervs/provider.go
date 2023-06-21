@@ -245,3 +245,8 @@ func (p *ibmcloudPowerVSProvider) getFromDHCPServer(ctx context.Context, instanc
 
 	return ip, nil
 }
+
+// Add SelectInstanceType method to select an instance type based on the memory and vcpu requirements
+func (p *ibmcloudPowerVSProvider) SelectInstanceType(ctx context.Context, memory int64, vcpu int64) (string, error) {
+	return "", nil
+}

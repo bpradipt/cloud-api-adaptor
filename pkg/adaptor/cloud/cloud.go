@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 
 	"github.com/containerd/containerd/pkg/cri/annotations"
@@ -37,6 +38,8 @@ type Provider interface {
 	CreateInstance(ctx context.Context, podName, sandboxID string, cloudConfig cloudinit.CloudConfigGenerator, instanceType string) (instance *Instance, err error)
 	DeleteInstance(ctx context.Context, instanceID string) error
 	Teardown() error
+	// Add SelectInstanceType method based on vCPU and memory to Provider interface
+	SelectInstanceType(ctx context.Context, vCPU int64, memory int64) (instanceType string, err error)
 }
 
 type Instance struct {
@@ -76,6 +79,13 @@ type sandbox struct {
 	instanceID   string
 	netNSPath    string
 	instanceType string
+}
+
+type InstanceTypeTuple struct {
+	InstanceType string
+	Vcpu         int64
+	// In MiB
+	Memory int64
 }
 
 func (s *cloudService) addSandbox(sid sandboxID, sandbox *sandbox) error {
@@ -214,6 +224,19 @@ func (s *cloudService) CreateVM(ctx context.Context, req *pb.CreateVMRequest) (r
 
 	// Get Pod VM instance type from annotations
 	instanceType := util.GetInstanceTypeFromAnnotation(req.Annotations)
+
+	// Get Pod VM cpu and memory from annotations
+	vCPU, memory := util.GetCPUAndMemoryFromAnnotation(req.Annotations)
+	// If vCPU and memory are set in annotations then find the best fit instance type
+	// from the cloud provider
+	// vCPU and Memory gets higher priority than instance type from annotation
+	if vCPU != 0 && memory != 0 {
+		instanceType, err = s.provider.SelectInstanceType(ctx, vCPU, memory)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get instance type based on vCPU and memory annotations: %w", err)
+		}
+		logger.Printf("Instance type selected by the cloud provider based on vCPU and memory annotations: %s", instanceType)
+	}
 
 	// TODO: server name is also generated in each cloud provider, and possibly inconsistent
 	serverName := util.GenerateInstanceName(pod, string(sid), 63)
@@ -403,4 +426,35 @@ func (s *cloudService) StopVM(ctx context.Context, req *pb.StopVMRequest) (*pb.S
 	}
 
 	return &pb.StopVMResponse{}, nil
+}
+
+// Method to sort InstanceTypeTuple into ascending order based on memory
+func SortInstanceTypesOnMemory(instanceTypesTupleList []InstanceTypeTuple) []InstanceTypeTuple {
+
+	// Use sort.Slice to sort the instanceTypeTupleList slice and return the sorted slice
+	sort.Slice(instanceTypesTupleList, func(i, j int) bool {
+		return instanceTypesTupleList[i].Memory < instanceTypesTupleList[j].Memory
+	})
+
+	return instanceTypesTupleList
+}
+
+// Method to find the best fit instance type for the given memory and vcpus
+// The instanceTypeTuple slice is a sorted list of instance type based on ascending order of supported memory
+func GetBestFitInstanceType(sortedInstanceTypesTupleList []InstanceTypeTuple, vcpus int64, memory int64) (string, error) {
+
+	// Use sort.Search to find the index of the first element in the sortedInstanceTypeTupleList slice
+	// that is greater than or equal to the given memory and vcpus
+	index := sort.Search(len(sortedInstanceTypesTupleList), func(i int) bool {
+		return sortedInstanceTypesTupleList[i].Memory >= memory && sortedInstanceTypesTupleList[i].Vcpu >= vcpus
+	})
+
+	// If binary search fails to find a match, return error
+	if index == len(sortedInstanceTypesTupleList) {
+		return "", fmt.Errorf("no instance type found for the given vcpus (%d) and memory (%d)", vcpus, memory)
+	}
+
+	// If binary search finds a match, return the instance type
+	return sortedInstanceTypesTupleList[index].InstanceType, nil
+
 }
