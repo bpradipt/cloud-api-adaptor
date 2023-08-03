@@ -54,8 +54,8 @@ metadata:
   name: azure-files-csi-wrapper-controller-binding
 subjects:
   - kind: ServiceAccount
-    name: csi-azurefile-controller-sa
-    namespace: kube-system
+    name: azure-file-csi-driver-controller-sa
+    namespace: openshift-cluster-csi-drivers
 roleRef:
   kind: ClusterRole
   name: azure-files-csi-wrapper-runner
@@ -68,8 +68,8 @@ metadata:
   name: azure-files-csi-wrapper-node-binding
 subjects:
   - kind: ServiceAccount
-    name: csi-azurefile-node-sa
-    namespace: kube-system
+    name: azure-file-csi-driver-node-sa
+    namespace: openshift-cluster-csi-drivers
 roleRef:
   kind: ClusterRole
   name: azure-files-csi-wrapper-runner

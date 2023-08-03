@@ -7,7 +7,7 @@ spec:
             - --v=2
             - --endpoint=/csi/csi-node-wrapper.sock
             - --target-endpoint=/csi/csi.sock
-            - --namespace=kube-system
+            - --namespace=openshift-cluster-csi-drivers
           env:
             - name: POD_NODE_NAME
               valueFrom:
@@ -22,14 +22,12 @@ spec:
               name: podvminfo-dir
             - mountPath: /run/kata-containers/shared/direct-volumes
               name: kata-direct-volumes-dir
-
-        - name: node-driver-registrar
+        - name: csi-node-driver-registrar
           env:
             - name: ADDRESS
               value: /csi/csi-node-wrapper.sock
             - name: DRIVER_REG_SOCK_PATH
               value: /var/lib/kubelet/plugins/file.csi.azure.com/csi-node-wrapper.sock
-
       volumes:
         - name: podvminfo-dir
           hostPath:

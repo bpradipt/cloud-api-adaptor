@@ -6,7 +6,7 @@ metadata:
     app: nginx
   namespace: default
 spec:
-  runtimeClassName: kata-remote
+  runtimeClassName: kata-remote-cc
   containers:
     - name: azure-file-podvm-node-driver
       env:
