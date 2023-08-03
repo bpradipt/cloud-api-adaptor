@@ -52,6 +52,37 @@ func (m mockEC2Client) RunInstances(ctx context.Context,
 	}, nil
 }
 
+// Create a mock EC2 DescribeInstances method
+func (m mockEC2Client) DescribeInstances(ctx context.Context,
+	params *ec2.DescribeInstancesInput,
+	optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+
+	// Create a mock instance ID
+	mockInstanceID := "i-1234567890abcdef0"
+	// Return a mock DescribeInstancesOutput
+	return &ec2.DescribeInstancesOutput{
+		Reservations: []types.Reservation{
+			{
+				Instances: []types.Instance{
+					{
+						InstanceId: &mockInstanceID,
+						// Add public DNS name
+						PublicDnsName: aws.String("ec2-192-168-100-1.compute-1.amazonaws.com"),
+						// Add private IP address to mock instance
+						PrivateIpAddress: aws.String("10.0.0.2"),
+						// Add private IP address to network interface
+						NetworkInterfaces: []types.InstanceNetworkInterface{
+							{
+								PrivateIpAddress: aws.String("10.0.0.2"),
+							},
+						},
+					},
+				},
+			},
+		},
+	}, nil
+}
+
 // Create a mock EC2 TerminateInstances method
 func (m mockEC2Client) TerminateInstances(ctx context.Context,
 	params *ec2.TerminateInstancesInput,
@@ -89,6 +120,42 @@ func (m mockEC2Client) DescribeInstanceTypes(ctx context.Context,
 			},
 		},
 	}, nil
+}
+
+// Create a mock CreateTags method
+func (m mockEC2Client) CreateTags(ctx context.Context,
+	params *ec2.CreateTagsInput,
+	optFns ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error) {
+
+	// Return a mock CreateTagsOutput
+	return &ec2.CreateTagsOutput{}, nil
+}
+
+// Create a mock EC2 ModifyInstanceAttribute method
+func (m mockEC2Client) ModifyInstanceAttribute(ctx context.Context,
+	params *ec2.ModifyInstanceAttributeInput,
+	optFns ...func(*ec2.Options)) (*ec2.ModifyInstanceAttributeOutput, error) {
+
+	// Return a mock ModifyInstanceAttributeOutput
+	return &ec2.ModifyInstanceAttributeOutput{}, nil
+}
+
+// Create a mock EC2 StopInstances method
+func (m mockEC2Client) StopInstances(ctx context.Context,
+	params *ec2.StopInstancesInput,
+	optFns ...func(*ec2.Options)) (*ec2.StopInstancesOutput, error) {
+
+	// Return a mock StopInstancesOutput
+	return &ec2.StopInstancesOutput{}, nil
+}
+
+// Create a mock EC2 StartInstances method
+func (m mockEC2Client) StartInstances(ctx context.Context,
+	params *ec2.StartInstancesInput,
+	optFns ...func(*ec2.Options)) (*ec2.StartInstancesOutput, error) {
+
+	// Return a mock StartInstancesOutput
+	return &ec2.StartInstancesOutput{}, nil
 }
 
 // Create a serviceConfig struct without public IP

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"net/netip"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -23,20 +24,38 @@ import (
 var logger = log.New(log.Writer(), "[adaptor/cloud/aws] ", log.LstdFlags|log.Lmsgprefix)
 var errNotReady = errors.New("address not ready")
 
-const maxInstanceNameLen = 63
+const (
+	maxInstanceNameLen = 63
+	// Add maxWaitTime to allow for instance to be ready
+	maxWaitTime = 120 * time.Second
+)
 
 // Make ec2Client a mockable interface
 type ec2Client interface {
 	RunInstances(ctx context.Context,
 		params *ec2.RunInstancesInput,
 		optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error)
+	DescribeInstances(ctx context.Context,
+		params *ec2.DescribeInstancesInput,
+		optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
 	TerminateInstances(ctx context.Context,
 		params *ec2.TerminateInstancesInput,
 		optFns ...func(*ec2.Options)) (*ec2.TerminateInstancesOutput, error)
-	// Add DescribeInstanceTypes method
 	DescribeInstanceTypes(ctx context.Context,
 		params *ec2.DescribeInstanceTypesInput,
 		optFns ...func(*ec2.Options)) (*ec2.DescribeInstanceTypesOutput, error)
+	CreateTags(ctx context.Context,
+		params *ec2.CreateTagsInput,
+		optFns ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error)
+	ModifyInstanceAttribute(ctx context.Context,
+		params *ec2.ModifyInstanceAttributeInput,
+		optFns ...func(*ec2.Options)) (*ec2.ModifyInstanceAttributeOutput, error)
+	StopInstances(ctx context.Context,
+		params *ec2.StopInstancesInput,
+		optFns ...func(*ec2.Options)) (*ec2.StopInstancesOutput, error)
+	StartInstances(ctx context.Context,
+		params *ec2.StartInstancesInput,
+		optFns ...func(*ec2.Options)) (*ec2.StartInstancesOutput, error)
 }
 type awsProvider struct {
 	// Make ec2Client a mockable interface
@@ -66,6 +85,14 @@ func NewProvider(config *Config) (cloud.Provider, error) {
 		return nil, err
 	}
 
+	// Initialise VM pool
+	// Precreate instances
+	if config.PoolSize > 0 {
+		if err := provider.initializePodVmPool(context.TODO(), config.PoolSize); err != nil {
+			return nil, err
+		}
+	}
+
 	return provider, nil
 }
 
@@ -92,6 +119,9 @@ func getIPs(instance types.Instance) ([]netip.Addr, error) {
 }
 
 func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID string, cloudConfig cloudinit.CloudConfigGenerator, spec cloud.InstanceTypeSpec) (*cloud.Instance, error) {
+
+	// cloud.Instance var
+	var instance cloud.Instance
 
 	instanceName := util.GenerateInstanceName(podName, sandboxID, maxInstanceNameLen)
 
@@ -133,56 +163,115 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 
 	var input *ec2.RunInstancesInput
 
-	if p.serviceConfig.UseLaunchTemplate {
-		input = &ec2.RunInstancesInput{
-			MinCount: aws.Int32(1),
-			MaxCount: aws.Int32(1),
-			LaunchTemplate: &types.LaunchTemplateSpecification{
-				LaunchTemplateName: aws.String(p.serviceConfig.LaunchTemplateName),
+	// Check if pre-created instances are available
+	// If so, use one of them
+	if len(p.serviceConfig.PreCreatedInstances) > 0 {
+		// Get the first pre-created instance
+		instance = p.serviceConfig.PreCreatedInstances[0]
+		// Remove the first pre-created instance from the list
+		p.serviceConfig.PreCreatedInstances = p.serviceConfig.PreCreatedInstances[1:]
+
+		// Update the instance name of pre-created instance with the generated instance name
+		instance.Name = instanceName
+
+		logger.Printf("Using instance(%s) from precreated pool for %s", instance.ID, instanceName)
+
+		// Modify the instance attribute to set the instance id and shutdown behaviour
+		_, err := p.ec2Client.ModifyInstanceAttribute(ctx, &ec2.ModifyInstanceAttributeInput{
+			InstanceId: aws.String(instance.ID),
+			// Update the instance shutdown behaviour to terminate
+			InstanceInitiatedShutdownBehavior: &types.AttributeValue{
+				Value: aws.String("terminate"),
 			},
-			UserData:          &userDataEnc,
-			TagSpecifications: tagSpecifications,
+		})
+		if err != nil {
+			return nil, err
 		}
+
+		// Different attribute types need to be handled separately
+
+		// Modify the instance attribute to set userData
+		_, err = p.ec2Client.ModifyInstanceAttribute(ctx, &ec2.ModifyInstanceAttributeInput{
+			InstanceId: aws.String(instance.ID),
+			// Update the instance userData
+			UserData: &types.BlobAttributeValue{
+				Value: []byte(userDataEnc),
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		// Create tagsInput based on instanceTags for the instance
+		tagsInput := &ec2.CreateTagsInput{
+			Resources: []string{instance.ID},
+			Tags:      instanceTags,
+		}
+
+		_, err = p.ec2Client.CreateTags(ctx, tagsInput)
+		if err != nil {
+			logger.Printf("Adding tags to the instance failed with error: %s", err)
+		}
+		// Start the instance
+		_, err = p.ec2Client.StartInstances(ctx, &ec2.StartInstancesInput{
+			InstanceIds: []string{instance.ID},
+		})
+		if err != nil {
+			return nil, err
+		}
+		// Log the instance struct
+		logger.Printf("Instance details from the pool: %#v", instance)
 	} else {
-		input = &ec2.RunInstancesInput{
-			MinCount:          aws.Int32(1),
-			MaxCount:          aws.Int32(1),
-			ImageId:           aws.String(p.serviceConfig.ImageId),
-			InstanceType:      types.InstanceType(instanceType),
-			SecurityGroupIds:  p.serviceConfig.SecurityGroupIds,
-			SubnetId:          aws.String(p.serviceConfig.SubnetId),
-			UserData:          &userDataEnc,
-			TagSpecifications: tagSpecifications,
+
+		if p.serviceConfig.UseLaunchTemplate {
+			input = &ec2.RunInstancesInput{
+				MinCount: aws.Int32(1),
+				MaxCount: aws.Int32(1),
+				LaunchTemplate: &types.LaunchTemplateSpecification{
+					LaunchTemplateName: aws.String(p.serviceConfig.LaunchTemplateName),
+				},
+				UserData:          &userDataEnc,
+				TagSpecifications: tagSpecifications,
+			}
+		} else {
+			input = &ec2.RunInstancesInput{
+				MinCount:          aws.Int32(1),
+				MaxCount:          aws.Int32(1),
+				ImageId:           aws.String(p.serviceConfig.ImageId),
+				InstanceType:      types.InstanceType(instanceType),
+				SecurityGroupIds:  p.serviceConfig.SecurityGroupIds,
+				SubnetId:          aws.String(p.serviceConfig.SubnetId),
+				UserData:          &userDataEnc,
+				TagSpecifications: tagSpecifications,
+			}
+			if p.serviceConfig.KeyName != "" {
+				input.KeyName = aws.String(p.serviceConfig.KeyName)
+			}
 		}
-		if p.serviceConfig.KeyName != "" {
-			input.KeyName = aws.String(p.serviceConfig.KeyName)
+
+		logger.Printf("CreateInstance: name: %q", instanceName)
+
+		result, err := p.ec2Client.RunInstances(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("Creating instance (%v) returned error: %s", result, err)
 		}
+
+		logger.Printf("created an instance %s for sandbox %s", *result.Instances[0].PublicDnsName, sandboxID)
+
+		instanceID := *result.Instances[0].InstanceId
+
+		ips, err := getIPs(result.Instances[0])
+		if err != nil {
+			logger.Printf("failed to get IPs for the instance : %v ", err)
+			return nil, err
+		}
+
+		instance.ID = instanceID
+		instance.Name = instanceName
+		instance.IPs = ips
+
 	}
-
-	logger.Printf("CreateInstance: name: %q", instanceName)
-
-	result, err := p.ec2Client.RunInstances(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("Creating instance (%v) returned error: %s", result, err)
-	}
-
-	logger.Printf("created an instance %s for sandbox %s", *result.Instances[0].PublicDnsName, sandboxID)
-
-	instanceID := *result.Instances[0].InstanceId
-
-	ips, err := getIPs(result.Instances[0])
-	if err != nil {
-		logger.Printf("failed to get IPs for the instance : %v ", err)
-		return nil, err
-	}
-
-	instance := &cloud.Instance{
-		ID:   instanceID,
-		Name: instanceName,
-		IPs:  ips,
-	}
-
-	return instance, nil
+	return &instance, nil
 }
 
 func (p *awsProvider) DeleteInstance(ctx context.Context, instanceID string) error {
@@ -265,4 +354,102 @@ func (p *awsProvider) getInstanceTypeInformation(instanceType string) (vcpu int6
 	}
 	return 0, 0, fmt.Errorf("instance type %s not found", instanceType)
 
+}
+
+// Add a method to precreate some instances in stopped state using ec2Client.RunInstances
+// Take the number of instances to be created as an argument
+// Take the RunInstancesInput parameters from serviceConfig
+// Return the cloud.Instance slice
+func (p *awsProvider) initializePodVmPool(ctx context.Context, numInstances int) error {
+
+	// Create a slice of cloud.Instance
+	instances := make([]cloud.Instance, numInstances)
+
+	// Create a slice of RunInstancesInput
+	runInstancesInput := make([]*ec2.RunInstancesInput, numInstances)
+
+	// Create a slice of RunInstancesOutput
+	runInstancesOutput := make([]*ec2.RunInstancesOutput, numInstances)
+
+	// Create RunInstancesInput for each instance
+	// Precreated instances are of one type and one image
+	// Precreated instances cannot be customized using pod annotations
+	for i := 0; i < numInstances; i++ {
+		runInstancesInput[i] = &ec2.RunInstancesInput{
+			ImageId:          aws.String(p.serviceConfig.ImageId),
+			InstanceType:     types.InstanceType(p.serviceConfig.InstanceType),
+			MaxCount:         aws.Int32(1),
+			MinCount:         aws.Int32(1),
+			SecurityGroupIds: p.serviceConfig.SecurityGroupIds,
+			SubnetId:         aws.String(p.serviceConfig.SubnetId),
+			// Don't delete the instance on shutdown. We'll change this to terminate later.
+			InstanceInitiatedShutdownBehavior: types.ShutdownBehaviorStop,
+			//UserData:         &userDataEnc,
+		}
+		if p.serviceConfig.KeyName != "" {
+			runInstancesInput[i].KeyName = aws.String(p.serviceConfig.KeyName)
+		}
+	}
+
+	// Create instances
+	var err error
+	for i := 0; i < numInstances; i++ {
+		runInstancesOutput[i], err = p.ec2Client.RunInstances(ctx, runInstancesInput[i])
+		if err != nil {
+			logger.Printf("failed to create instances : %v ", err)
+			return err
+		}
+	}
+
+	// Get the ip addresses for each instance using getIPs
+	for i := 0; i < numInstances; i++ {
+		ips, err := getIPs(runInstancesOutput[i].Instances[0])
+		if err != nil {
+			logger.Printf("failed to get IPs for the instance : %v ", err)
+			return err
+		}
+
+		instance := cloud.Instance{
+			ID:   *runInstancesOutput[i].Instances[0].InstanceId,
+			Name: *runInstancesOutput[i].Instances[0].InstanceId,
+			IPs:  ips,
+		}
+		instances[i] = instance
+	}
+
+	// Wait for the instances to be in Running state
+	// TBD: This might not be required as we are switching the instances to stopped state
+	for i := 0; i < numInstances; i++ {
+		describeInstanceInput := &ec2.DescribeInstancesInput{
+			InstanceIds: []string{*runInstancesOutput[i].Instances[0].InstanceId},
+		}
+
+		// Create New InstanceRunningWaiter
+		waiter := ec2.NewInstanceRunningWaiter(p.ec2Client)
+
+		// Wait for instance to be in Running state
+		err := waiter.Wait(ctx, describeInstanceInput, maxWaitTime)
+		if err != nil {
+			logger.Printf("failed to wait for the instance to be ready : %v ", err)
+			return err
+		}
+	}
+
+	// Stop the instances
+	for i := 0; i < numInstances; i++ {
+		stopInstanceInput := &ec2.StopInstancesInput{
+			InstanceIds: []string{*runInstancesOutput[i].Instances[0].InstanceId},
+		}
+
+		_, err := p.ec2Client.StopInstances(ctx, stopInstanceInput)
+		if err != nil {
+			logger.Printf("failed to stop the instance : %v ", err)
+			return err
+		}
+	}
+
+	// Update config.PreCreatedInstances with the instances
+	p.serviceConfig.PreCreatedInstances = instances
+
+	return nil
 }
