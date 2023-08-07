@@ -44,6 +44,9 @@ type Config struct {
 	InstanceSizes        instanceSizes
 	InstanceSizeSpecList []cloud.InstanceTypeSpec
 	Tags                 cloud.KeyValueFlag
+	PoolSize             int
+	// Add cloud.Instance array to store the precreated instances
+	PreCreatedInstances []cloud.Instance
 }
 
 func (c Config) Redact() Config {

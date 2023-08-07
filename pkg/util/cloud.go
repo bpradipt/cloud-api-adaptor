@@ -2,6 +2,7 @@ package util
 
 import (
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 
@@ -115,4 +116,19 @@ func Contains(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// Generate Random String of length n
+func GenerateRandomString(n int) string {
+	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letters[RandomInt(0, len(letters))]
+	}
+	return string(b)
+}
+
+// Generate Random Int between min and max
+func RandomInt(min, max int) int {
+	return min + rand.Intn(max-min)
 }
