@@ -189,10 +189,10 @@ func (p *azureProvider) CreateInstance(ctx context.Context, podName, sandboxID s
 		}
 
 		// Start the instance
-		err = p.start(ctx, instance.Name)
-		if err != nil {
-			return nil, err
-		}
+		//err = p.start(ctx, instance.Name)
+		//if err != nil {
+		//	return nil, err
+		//}
 		// Log the instance struct
 		logger.Printf("Instance details from the pool: %#v", instance)
 	} else {
@@ -581,10 +581,10 @@ func (p *azureProvider) initializePodVmPool(ctx context.Context, numInstances in
 		instances[i] = instance
 
 		// Stop the instance
-		if err := p.stop(ctx, instanceName); err != nil {
-			logger.Printf("stopping instance (%s): %s", instanceID, err)
-			return err
-		}
+		//if err := p.stop(ctx, instanceName); err != nil {
+		//	logger.Printf("stopping instance (%s): %s", instanceID, err)
+		//	return err
+		//}
 
 	}
 
