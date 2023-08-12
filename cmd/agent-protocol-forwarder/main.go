@@ -125,6 +125,20 @@ func getUserData(ctx context.Context) string {
 func parseUserData(userData string, path string) error {
 
 	// Write userData to file specified in the path var
+	// Create the directory and the file - /peerpod/daemon.json
+
+	// Split the path into directory and file name
+	splitPath := strings.Split(path, "/")
+	dir := strings.Join(splitPath[:len(splitPath)-1], "/")
+
+	// Create the directory.
+	err := os.MkdirAll(dir, 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create directory: %s", err)
+
+	}
+
+	// Create the file
 	file, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %s", err)
@@ -165,6 +179,7 @@ func (cfg *Config) Setup() (cmd.Starter, error) {
 		userData             string
 		ctx                  context.Context
 		cancel               context.CancelFunc
+		enableUserData       bool
 	)
 
 	cmd.Parse(programName, os.Args, func(flags *flag.FlagSet) {
@@ -179,8 +194,11 @@ func (cfg *Config) Setup() (cmd.Starter, error) {
 		flags.StringVar(&tlsConfig.KeyFile, "cert-key", "", "cert key")
 		flags.BoolVar(&tlsConfig.SkipVerify, "tls-skip-verify", false, "Skip TLS certificate verification - use it only for testing")
 		flags.BoolVar(&disableTLS, "disable-tls", false, "Disable TLS encryption - use it only for testing")
+		// flag to specify whether to use the VM's userData to configure the agent
+		flags.BoolVar(&enableUserData, "enable-userdata", false, "Use the VM's userData to configure the agent")
 		// flag to specify the timeout for retrieving the VM's userData
 		flags.DurationVar(&userDataFetchTimeout, "userdata-fetch-timeout", 0, "Timeout for retrieving the VM's userData. Default is infinite.")
+
 	})
 
 	if !disableTLS {
@@ -193,48 +211,50 @@ func (cfg *Config) Setup() (cmd.Starter, error) {
 		cmd.Exit(0)
 	}
 
-	// Use retry.Do to retry the getUserData function until it succeeds
-	// This is needed because the VM's userData is not available immediately
-	// Have an option to either wait forever or timeout after a certain amount of time
-	// https://github.com/avast/retry-go
+	if enableUserData {
+		// Use retry.Do to retry the getUserData function until it succeeds
+		// This is needed because the VM's userData is not available immediately
+		// Have an option to either wait forever or timeout after a certain amount of time
+		// https://github.com/avast/retry-go
 
-	// If userDataFetchTimeout is set to 0, then create context with infinite timeout
-	// Else create context with the specified timeout
-	if userDataFetchTimeout == 0 {
-		ctx, cancel = context.WithCancel(context.Background())
-		defer cancel()
-	} else {
-		ctx, cancel = context.WithTimeout(context.Background(), userDataFetchTimeout)
-		defer cancel()
-	}
+		// If userDataFetchTimeout is set to 0, then create context with infinite timeout
+		// Else create context with the specified timeout
+		if userDataFetchTimeout == 0 {
+			ctx, cancel = context.WithCancel(context.Background())
+			defer cancel()
+		} else {
+			ctx, cancel = context.WithTimeout(context.Background(), userDataFetchTimeout)
+			defer cancel()
+		}
 
-	err := retry.Do(
-		func() error {
-			userData = getUserData(ctx)
-			if userData != "" && strings.Contains(userData, "podip") {
-				return nil // Valid user data, stop retrying
-			}
-			return fmt.Errorf("invalid user data")
-		},
-		retry.Context(ctx),                // Use the context with timeout
-		retry.Delay(5*time.Second),        // Set the delay between retries
-		retry.LastErrorOnly(true),         // Only consider the last error for retry decision
-		retry.DelayType(retry.FixedDelay), // Use fixed delay between retries
-		retry.OnRetry(func(n uint, err error) { // Optional: log retry attempts
-			fmt.Printf("Retry attempt %d: %v\n", n, err)
-		}),
-	)
+		err := retry.Do(
+			func() error {
+				userData = getUserData(ctx)
+				if userData != "" && strings.Contains(userData, "podip") {
+					return nil // Valid user data, stop retrying
+				}
+				return fmt.Errorf("invalid user data")
+			},
+			retry.Context(ctx),                // Use the context with timeout
+			retry.Delay(5*time.Second),        // Set the delay between retries
+			retry.LastErrorOnly(true),         // Only consider the last error for retry decision
+			retry.DelayType(retry.FixedDelay), // Use fixed delay between retries
+			retry.OnRetry(func(n uint, err error) { // Optional: log retry attempts
+				fmt.Printf("Retry attempt %d: %v\n", n, err)
+			}),
+		)
 
-	if err != nil {
-		fmt.Println("Error: Failed to get valid user data")
-	} else {
-		fmt.Printf("Valid user data: %s\n", userData)
-	}
+		if err != nil {
+			fmt.Println("Error: Failed to get valid user data")
+		} else {
+			fmt.Printf("Valid user data: %s\n", userData)
+		}
 
-	// Parse the userData and copy the specified values to the cfg.configPath file
-	if err := parseUserData(userData, cfg.configPath); err != nil {
-		fmt.Printf("Error: Failed to parse userData: %s\n", err)
-		return nil, err
+		// Parse the userData and copy the specified values to the cfg.configPath file
+		if err := parseUserData(userData, cfg.configPath); err != nil {
+			fmt.Printf("Error: Failed to parse userData: %s\n", err)
+			return nil, err
+		}
 	}
 
 	for path, obj := range map[string]interface{}{

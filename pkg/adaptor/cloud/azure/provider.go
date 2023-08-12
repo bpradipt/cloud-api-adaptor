@@ -163,15 +163,35 @@ func (p *azureProvider) CreateInstance(ctx context.Context, podName, sandboxID s
 	// cloud.Instance var
 	var instance cloud.Instance
 
+	var b64EncData string
+
 	instanceName := util.GenerateInstanceName(podName, sandboxID, maxInstanceNameLen)
 
-	userData, err := cloudConfig.Generate()
+	customData, err := cloudConfig.Generate()
 	if err != nil {
 		return nil, err
 	}
 
-	//Convert userData to base64
-	userDataEnc := base64.StdEncoding.EncodeToString([]byte(userData))
+	// Copy the data in {} after content: from customData
+	/*
+		#cloud-config
+		write_files:
+		  - path: /peerpod/daemon.json
+		    content: |
+		      {
+		       ...
+			  }
+	*/
+
+	if p.serviceConfig.EnableUserData {
+		userData := strings.Split(customData, "content: |")[1]
+		userData = strings.TrimSpace(userData)
+		//Convert userData to base64
+		b64EncData = base64.StdEncoding.EncodeToString([]byte(userData))
+	} else {
+		//Convert customData to base64
+		b64EncData = base64.StdEncoding.EncodeToString([]byte(customData))
+	}
 
 	// If precreated VMs are available, use one of them
 	if len(p.serviceConfig.PreCreatedInstances) > 0 {
@@ -183,7 +203,7 @@ func (p *azureProvider) CreateInstance(ctx context.Context, podName, sandboxID s
 		logger.Printf("Using instance(%s) from precreated pool for %s", instance.ID, instance.Name)
 
 		// Modify the instance to set userData
-		err := p.modifyInstanceUserData(ctx, instance.Name, userDataEnc)
+		err := p.modifyInstanceUserData(ctx, instance.Name, b64EncData)
 		if err != nil {
 			return nil, err
 		}
@@ -228,7 +248,7 @@ func (p *azureProvider) CreateInstance(ctx context.Context, podName, sandboxID s
 			return nil, err
 		}
 
-		vmParameters, err := p.getVMParameters(instanceSize, diskName, userDataEnc, sshBytes, instanceName, vmNIC)
+		vmParameters, err := p.getVMParameters(instanceSize, diskName, b64EncData, sshBytes, instanceName, vmNIC)
 		if err != nil {
 			return nil, err
 		}
@@ -262,7 +282,7 @@ func (p *azureProvider) CreateInstance(ctx context.Context, podName, sandboxID s
 	return &instance, nil
 }
 
-func (p *azureProvider) getVMParameters(instanceSize, diskName, userDataEnc string, sshBytes []byte, instanceName string, vmNIC *armnetwork.Interface) (*armcompute.VirtualMachine, error) {
+func (p *azureProvider) getVMParameters(instanceSize, diskName, b64EncData string, sshBytes []byte, instanceName string, vmNIC *armnetwork.Interface) (*armcompute.VirtualMachine, error) {
 	var managedDiskParams *armcompute.ManagedDiskParameters
 	var securityProfile *armcompute.SecurityProfile
 	if !p.serviceConfig.DisableCVM {
@@ -324,7 +344,6 @@ func (p *azureProvider) getVMParameters(instanceSize, diskName, userDataEnc stri
 			OSProfile: &armcompute.OSProfile{
 				AdminUsername: to.Ptr(p.serviceConfig.SSHUserName),
 				ComputerName:  to.Ptr(instanceName),
-				CustomData:    to.Ptr(userDataEnc),
 				LinuxConfiguration: &armcompute.LinuxConfiguration{
 					DisablePasswordAuthentication: to.Ptr(true),
 					//TBD: replace with a suitable mechanism to use precreated SSH key
@@ -350,6 +369,19 @@ func (p *azureProvider) getVMParameters(instanceSize, diskName, userDataEnc stri
 		},
 		// Add tags to the instance
 		Tags: tags,
+	}
+
+	// If EnableUserData is set to false then set OSProfile.CustomData to b64EncData and
+	// armcompute.VirtualMachine.Properties.UserData to nil
+	// If EnableUserData is set to true then set armcompute.VirtualMachine.Properties.UserData to b64EncData and
+	// OSProfile.CustomData to nil
+
+	if !p.serviceConfig.EnableUserData {
+		vmParameters.Properties.OSProfile.CustomData = to.Ptr(b64EncData)
+		vmParameters.Properties.UserData = nil
+	} else {
+		vmParameters.Properties.UserData = to.Ptr(b64EncData)
+		vmParameters.Properties.OSProfile.CustomData = nil
 	}
 
 	return &vmParameters, nil

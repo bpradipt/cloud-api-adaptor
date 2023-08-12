@@ -34,6 +34,8 @@ func (_ *Manager) ParseCmd(flags *flag.FlagSet) {
 	flags.Var(&azurecfg.Tags, "tags", "Custom tags (key=value pairs) to be used for the Pod VMs, comma separated")
 	// Add an integer parameter to precreate the number of Pod VMs
 	flags.IntVar(&azurecfg.PoolSize, "pool-size", 0, "Precreated pod VM pool size")
+	// Boolean to use userData instead of customData
+	flags.BoolVar(&azurecfg.EnableUserData, "enable-userdata", false, "Enable userData instead of customData")
 }
 
 func (_ *Manager) LoadEnv() {

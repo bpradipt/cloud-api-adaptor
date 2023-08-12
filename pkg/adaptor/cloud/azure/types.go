@@ -47,6 +47,7 @@ type Config struct {
 	PoolSize             int
 	// Add cloud.Instance array to store the precreated instances
 	PreCreatedInstances []cloud.Instance
+	EnableUserData      bool
 }
 
 func (c Config) Redact() Config {
