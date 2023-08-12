@@ -324,7 +324,7 @@ func (p *azureProvider) getVMParameters(instanceSize, diskName, userDataEnc stri
 			OSProfile: &armcompute.OSProfile{
 				AdminUsername: to.Ptr(p.serviceConfig.SSHUserName),
 				ComputerName:  to.Ptr(instanceName),
-				CustomData:    to.Ptr(userDataEnc),
+				//CustomData:    to.Ptr(userDataEnc),
 				LinuxConfiguration: &armcompute.LinuxConfiguration{
 					DisablePasswordAuthentication: to.Ptr(true),
 					//TBD: replace with a suitable mechanism to use precreated SSH key
@@ -347,6 +347,7 @@ func (p *azureProvider) getVMParameters(instanceSize, diskName, userDataEnc stri
 				},
 			},
 			SecurityProfile: securityProfile,
+			UserData:        to.Ptr(userDataEnc),
 		},
 		// Add tags to the instance
 		Tags: tags,
