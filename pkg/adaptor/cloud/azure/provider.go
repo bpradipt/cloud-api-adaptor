@@ -165,10 +165,24 @@ func (p *azureProvider) CreateInstance(ctx context.Context, podName, sandboxID s
 
 	instanceName := util.GenerateInstanceName(podName, sandboxID, maxInstanceNameLen)
 
-	userData, err := cloudConfig.Generate()
+	customData, err := cloudConfig.Generate()
 	if err != nil {
 		return nil, err
 	}
+
+	// Copy the data in {} after content: from customData
+	/*
+		#cloud-config
+		write_files:
+		  - path: /peerpod/daemon.json
+		    content: |
+		      {
+		       ...
+			  }
+	*/
+
+	userData := strings.Split(customData, "content: |")[1]
+	userData = strings.TrimSpace(userData)
 
 	//Convert userData to base64
 	userDataEnc := base64.StdEncoding.EncodeToString([]byte(userData))
