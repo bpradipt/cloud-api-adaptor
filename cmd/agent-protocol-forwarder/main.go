@@ -125,6 +125,20 @@ func getUserData(ctx context.Context) string {
 func parseUserData(userData string, path string) error {
 
 	// Write userData to file specified in the path var
+	// Create the directory and the file - /peerpod/daemon.json
+
+	// Split the path into directory and file name
+	splitPath := strings.Split(path, "/")
+	dir := strings.Join(splitPath[:len(splitPath)-1], "/")
+
+	// Create the directory
+	err := os.MkdirAll(dir, 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create directory: %s", err)
+
+	}
+
+	// Create the file
 	file, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %s", err)
