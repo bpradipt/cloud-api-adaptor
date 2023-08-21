@@ -1,95 +1,44 @@
 # Azure File CSI Wrapper for Peer Pod Storage
 
-## Peer Pod example using CSI Wrapper with azurefiles-csi-driver
+## Peer Pod example using CSI Wrapper with azurefiles-csi-driver on OpenShift
 
-### Set up a demo environment on your development machine
+Note: This approach is not supported for production. Use this for trying out peer-pods with
+persistent storage volumes on OpenShift
 
-1. Follow the [README.md](../../../../azure/README.md) to setup a x86_64 based demo environment on AKS.
+Prerequisites
+- Ensure the OpenShift cluster setup on Azure includes the Azure File CSI driver. Typically it
+is installed by default
+- Ensure OSC with peer-pods is configured on the cluster
 
-2. To prevent our changes to be rolled back, disable the built-in AKS azurefile driver:
-```bash
-az aks update -g ${AZURE_RESOURCE_GROUP} --name ${CLUSTER_NAME} --disable-file-driver
-```
+### Switch the Azure File CSI driver to unmanaged mode
 
-3. Assign the `Storage Account Contributor` role to the AKS agent pool application so it can create storage accounts:
-
-```bash
-OBJECT_ID="$(az ad sp list --display-name "${CLUSTER_NAME}-agentpool" --query '[].id' --output tsv)"
-az role assignment create \
-  --role "Storage Account Contributor" \
-  --assignee-object-id ${OBJECT_ID} \
-  --assignee-principal-type ServicePrincipal \
-  --scope "/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${AZURE_RESOURCE_GROUP}-aks"
-```
-
-### Deploy azurefile-csi-driver on the cluster
-Note: All the steps can be performed anywhere with cluster access
-
-1. Clone the azurefile-csi-driver source:
-```bash
-git clone --depth 1 --branch v1.28.0 https://github.com/kubernetes-sigs/azurefile-csi-driver
-cd azurefile-csi-driver
-```
-
-2. Enable `attachRequired` in the CSI Driver:
-```bash
-sed -i 's/attachRequired: false/attachRequired: true/g' deploy/csi-azurefile-driver.yaml
-```
-
-3. Run the script:
-```bash
-bash ./deploy/install-driver.sh master local
-```
-
-### Build custom csi-wrapper images (for development)
-Follow this if you have made changes to the CSI wrapper code and want to deploy those changes.
-
-1. Go back to the cloud-api-adaptor directory:
-```bash
-cd ~/cloud-api-adaptor
-```
-
-2. Build csi-wrapper images:
-```bash
-cd volumes/csi-wrapper/
-make csi-controller-wrapper-docker
-make csi-node-wrapper-docker
-make csi-podvm-wrapper-docker
-cd -
-```
-
-3. Export custom registry
+- Edit the `clustercsidrivers.operator.openshift.io` CR named `file.csi.azure.com` and change
+the `managementState` to `Unmanaged`
 
 ```bash
-export REGISTRY="my-registry" # e.g. "quay.io/my-registry"
+oc patch clustercsidriver file.csi.azure.com --type=merge -p "{\"spec\":{\"managementState\":\"Unmanaged\"}}"
 ```
 
-4. Tag and push images
+### Reconfigure the Azure File CSI driver to use only the nodes with OSC/peer-pods configured
+
+- Ensure that the Azure File CSI driver is only setup for the OSC/peer-pods nodes. By default the Azure File CSI
+driver is installed on all the cluster nodes. You'll need to edit the CSI driver node daemonset to run only on
+the nodes which has Kata/peer-pods configured.
+
 ```bash
-docker tag docker.io/library/csi-controller-wrapper:local ${REGISTRY}/csi-controller-wrapper:latest
-docker tag docker.io/library/csi-node-wrapper:local ${REGISTRY}/csi-node-wrapper:latest
-docker tag docker.io/library/csi-podvm-wrapper:local ${REGISTRY}/csi-podvm-wrapper:latest
-
-docker push ${REGISTRY}/csi-controller-wrapper:latest
-docker push ${REGISTRY}/csi-node-wrapper:latest
-docker push ${REGISTRY}/csi-podvm-wrapper:latest
+oc patch -n openshift-cluster-csi-drivers ds azure-file-csi-driver-node -p '{"spec":{"template":{"spec":{"nodeSelector": { "node-role.kubernetes.io/kata-oc":""}}}}}'
 ```
 
-5. Change image in CSI wrapper k8s resources
-```bash
-sed -i "s#quay.io/confidential-containers#${REGISTRY}#g" volumes/csi-wrapper/examples/azure/*.yaml
-```
+### Deploy csi-wrapper to patch Azure File CSI driver
 
-### Deploy csi-wrapper to patch azurefiles-csi-driver
-
-1. Go back to the cloud-api-adaptor directory
+1. Switch to the `cloud-api-adaptor` source directory
 ```bash
 cd ~/cloud-api-adaptor
 ```
 
 2. Create the PeerpodVolume CRD object
 ```bash
-kubectl apply -f volumes/csi-wrapper/crd/peerpodvolume.yaml
+oc apply -f volumes/csi-wrapper/crd/peerpodvolume.yaml
 ```
 
 The output looks like:
@@ -99,27 +48,28 @@ customresourcedefinition.apiextensions.k8s.io/peerpodvolumes.confidentialcontain
 
 3. Configure RBAC so that the wrapper has access to the required operations
 ```bash
-kubectl apply -f volumes/csi-wrapper/examples/azure/azure-files-csi-wrapper-runner.yaml
-kubectl apply -f volumes/csi-wrapper/examples/azure/azure-files-csi-wrapper-podvm.yaml
+oc apply -f volumes/csi-wrapper/examples/azure/azure-files-csi-wrapper-runner.yaml
+oc apply -f volumes/csi-wrapper/examples/azure/azure-files-csi-wrapper-podvm.yaml
 ```
 
-4. patch csi-azurefile-driver:
+4. Patch the Azure File CSI driver:
 ```bash
-kubectl patch deploy csi-azurefile-controller -n kube-system --patch-file volumes/csi-wrapper/examples/azure/patch-controller.yaml
-kubectl -n kube-system delete replicaset -l app=csi-azurefile-controller
-kubectl patch ds csi-azurefile-node -n kube-system --patch-file volumes/csi-wrapper/examples/azure/patch-node.yaml
+oc patch -n openshift-cluster-csi-drivers deploy azure-file-csi-driver-controller --patch-file volumes/csi-wrapper/examples/azure/patch-controller.yaml
+
+oc patch -n openshift-cluster-csi-drivers ds azure-file-csi-driver-node --patch-file volumes/csi-wrapper/examples/azure/patch-node.yaml
+
 ```
 
 5. Create **storage class**:
 ```bash
-kubectl apply -f volumes/csi-wrapper/examples/azure/azure-file-StorageClass-for-peerpod.yaml
+oc apply -f volumes/csi-wrapper/examples/azure/azure-file-StorageClass-for-peerpod.yaml
 ```
 
-### Run the `csi-wrapper for peerpod storage` demo
+### Run a sample workload for verification
 
-1. Create one pvc that use `azurefiles-csi-driver`
+1. Create one pvc that uses the Azure File CSI driver
 ```bash
-kubectl apply -f volumes/csi-wrapper/examples/azure/my-pvc.yaml
+oc apply -f volumes/csi-wrapper/examples/azure/my-pvc.yaml
 ```
 
 2. Wait for the pvc status to become `bound`
@@ -131,15 +81,12 @@ pvc-azurefile   Bound    pvc-3edc7a93-4531-4034-8818-1b1608907494   1Gi        R
 
 3. Create the nginx peer-pod demo with with `podvm-wrapper` and `azurefile-csi-driver` containers
 ```bash
-kubectl apply -f volumes/csi-wrapper/examples/azure/nginx-kata-with-my-pvc-and-csi-wrapper.yaml
+oc apply -f volumes/csi-wrapper/examples/azure/nginx-kata-with-my-pvc-and-csi-wrapper.yaml
 ```
 
 4. Exec into the container and check the mount
 
 ```bash
-kubectl exec nginx-pv -c nginx -i -t -- sh
+oc exec nginx-pv -c nginx -i -t -- sh
 # mount | grep mount-path
-//fffffffffffffffffffffff.file.core.windows.net/pvc-ff587660-73ed-4bd0-8850-285be480f490 on /mount-path type cifs (rw,relatime,vers=3.1.1,cache=strict,username=fffffffffffffffffffffff,uid=0,noforceuid,gid=0,noforcegid,addr=x.x.x.x,file_mode=0777,dir_mode=0777,soft,persistenthandles,nounix,serverino,mapposix,mfsymlinks,rsize=1048576,wsize=1048576,bsize=1048576,echo_interval=60,actimeo=30,closetimeo=1)
 ```
-
-**Note:** We can see there's a CIFS mount to `/mount-path` as expected
