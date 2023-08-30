@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"net/netip"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -37,6 +38,10 @@ type ec2Client interface {
 	DescribeInstanceTypes(ctx context.Context,
 		params *ec2.DescribeInstanceTypesInput,
 		optFns ...func(*ec2.Options)) (*ec2.DescribeInstanceTypesOutput, error)
+	// Add DescribeInstances method
+	DescribeInstances(ctx context.Context,
+		params *ec2.DescribeInstancesInput,
+		optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
 }
 type awsProvider struct {
 	// Make ec2Client a mockable interface
@@ -157,6 +162,36 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 		if p.serviceConfig.KeyName != "" {
 			input.KeyName = aws.String(p.serviceConfig.KeyName)
 		}
+
+		// Auto assign public IP address if UsePublicIP is set
+		if p.serviceConfig.UsePublicIP {
+			// Auto-assign public IP
+			input.NetworkInterfaces = []types.InstanceNetworkInterfaceSpecification{
+				{
+					AssociatePublicIpAddress: aws.Bool(true),
+					DeviceIndex:              aws.Int32(0),
+					SubnetId:                 aws.String(p.serviceConfig.SubnetId),
+					Groups:                   p.serviceConfig.SecurityGroupIds,
+					DeleteOnTermination:      aws.Bool(true),
+				},
+			}
+			// Remove the subnet ID from the input
+			input.SubnetId = nil
+			// Remove the security group IDs from the input
+			input.SecurityGroupIds = nil
+
+		}
+		// Add block device mappings to the instance to set the root volume size
+		if p.serviceConfig.RootVolumeSize > 0 {
+			input.BlockDeviceMappings = []types.BlockDeviceMapping{
+				{
+					DeviceName: aws.String(p.serviceConfig.RootDeviceName),
+					Ebs: &types.EbsBlockDevice{
+						VolumeSize: aws.Int32(int32(p.serviceConfig.RootVolumeSize)),
+					},
+				},
+			}
+		}
 	}
 
 	logger.Printf("CreateInstance: name: %q", instanceName)
@@ -176,6 +211,41 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 		return nil, err
 	}
 
+	if p.serviceConfig.UsePublicIP {
+		describeInput := &ec2.DescribeInstancesInput{
+			InstanceIds: []string{instanceID},
+		}
+		// Create a waiter
+		waiter := ec2.NewInstanceRunningWaiter(p.ec2Client)
+		// Wait for the instance to be running
+		err = waiter.Wait(context.TODO(), describeInput, 120*time.Second)
+		if err != nil {
+			logger.Printf("failed to wait for the instance to be up: %v ", err)
+			return nil, err
+		}
+
+		describeOutput, err := p.ec2Client.DescribeInstances(ctx, describeInput)
+		if err != nil {
+			logger.Printf("Unable to describe the instance ")
+			return nil, err
+		}
+
+		publicIP := describeOutput.Reservations[0].Instances[0].PublicIpAddress
+		if publicIP == nil {
+			return nil, fmt.Errorf("public IP is nil")
+		}
+
+		logger.Printf("public podNodeIP (%s)", *publicIP)
+
+		ip, err := netip.ParseAddr(*publicIP)
+		if err != nil {
+			return nil, err
+		}
+
+		ips[0] = ip
+
+	}
+
 	instance := &cloud.Instance{
 		ID:   instanceID,
 		Name: instanceName,
@@ -191,6 +261,8 @@ func (p *awsProvider) DeleteInstance(ctx context.Context, instanceID string) err
 			instanceID,
 		},
 	}
+
+	logger.Printf("Deleting instance (%s)", instanceID)
 
 	resp, err := p.ec2Client.TerminateInstances(ctx, terminateInput)
 
@@ -265,4 +337,87 @@ func (p *awsProvider) getInstanceTypeInformation(instanceType string) (vcpu int6
 	}
 	return 0, 0, fmt.Errorf("instance type %s not found", instanceType)
 
+}
+
+// Add a method to get public IP address of the instance
+// Take the instance id as an argument
+// Return the public IP address as a string
+func (p *awsProvider) getPublicIP(ctx context.Context, instanceID string) (netip.Addr, error) {
+	// Add describe instance input
+	describeInstanceInput := &ec2.DescribeInstancesInput{
+		InstanceIds: []string{instanceID},
+	}
+
+	// Create New InstanceRunningWaiter
+	waiter := ec2.NewInstanceRunningWaiter(p.ec2Client)
+
+	// Wait for instance to be ready before getting the public IP address
+	err := waiter.Wait(ctx, describeInstanceInput, maxWaitTime)
+	if err != nil {
+		logger.Printf("failed to wait for the instance to be ready : %v ", err)
+		return netip.Addr{}, err
+
+	}
+
+	// Add describe instance output
+	describeInstanceOutput, err := p.ec2Client.DescribeInstances(ctx, describeInstanceInput)
+	if err != nil {
+		logger.Printf("failed to describe the instance : %v ", err)
+		return netip.Addr{}, err
+	}
+	// Get the public IP address from InstanceNetworkInterfaceAssociation
+	publicIP := describeInstanceOutput.Reservations[0].Instances[0].NetworkInterfaces[0].Association.PublicIp
+
+	// Check if the public IP address is nil
+	if publicIP == nil {
+		return netip.Addr{}, fmt.Errorf("public IP address is nil")
+	}
+	// If the public IP address is empty, return an error
+	if *publicIP == "" {
+		return netip.Addr{}, fmt.Errorf("public IP address is empty")
+	}
+
+	logger.Printf("public IP address of the instance %s is %s", instanceID, *publicIP)
+
+	// Parse the public IP address
+	publicIPAddr, err := netip.ParseAddr(*publicIP)
+	if err != nil {
+		return netip.Addr{}, err
+	}
+
+	return publicIPAddr, nil
+}
+
+// Method to get device name from the AMI image ID
+// Take the image ID as an argument
+// Return the device name as a string
+func (p *awsProvider) getDeviceName(imageID string) (string, error) {
+
+	// Add describe images input
+	describeImagesInput := &ec2.DescribeImagesInput{
+		ImageIds: []string{imageID},
+	}
+
+	// Add describe images output
+	describeImagesOutput, err := p.ec2Client.DescribeImages(context.Background(), describeImagesInput)
+	if err != nil {
+		logger.Printf("failed to describe the image : %v ", err)
+		return "", err
+	}
+
+	// Get the device name
+	deviceName := describeImagesOutput.Images[0].RootDeviceName
+
+	// Check if the device name is nil
+	if deviceName == nil {
+		return "", fmt.Errorf("device name is nil")
+	}
+	// If the device name is empty, return an error
+	if *deviceName == "" {
+		return "", fmt.Errorf("device name is empty")
+	}
+
+	logger.Printf("device name of the image %s is %s", imageID, *deviceName)
+
+	return *deviceName, nil
 }

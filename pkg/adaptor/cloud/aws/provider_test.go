@@ -91,6 +91,37 @@ func (m mockEC2Client) DescribeInstanceTypes(ctx context.Context,
 	}, nil
 }
 
+// Create a mock EC2 DescribeInstances method
+func (m mockEC2Client) DescribeInstances(ctx context.Context,
+	params *ec2.DescribeInstancesInput,
+	optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+
+	// Create a mock instance ID
+	mockInstanceID := "i-1234567890abcdef0"
+	// Return a mock DescribeInstancesOutput
+	return &ec2.DescribeInstancesOutput{
+		Reservations: []types.Reservation{
+			{
+				Instances: []types.Instance{
+					{
+						InstanceId: &mockInstanceID,
+						// Add public DNS name
+						PublicDnsName: aws.String("ec2-192-168-100-1.compute-1.amazonaws.com"),
+						// Add private IP address to mock instance
+						PrivateIpAddress: aws.String("10.0.0.2"),
+						// Add private IP address to network interface
+						NetworkInterfaces: []types.InstanceNetworkInterface{
+							{
+								PrivateIpAddress: aws.String("10.0.0.2"),
+							},
+						},
+					},
+				},
+			},
+		},
+	}, nil
+}
+
 // Create a serviceConfig struct without public IP
 var serviceConfig = &Config{
 	Region: "us-east-1",
