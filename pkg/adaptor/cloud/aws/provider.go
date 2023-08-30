@@ -24,7 +24,11 @@ import (
 var logger = log.New(log.Writer(), "[adaptor/cloud/aws] ", log.LstdFlags|log.Lmsgprefix)
 var errNotReady = errors.New("address not ready")
 
-const maxInstanceNameLen = 63
+const (
+	maxInstanceNameLen = 63
+	// Add maxWaitTime to allow for instance to be ready
+	maxWaitTime = 120 * time.Second
+)
 
 // Make ec2Client a mockable interface
 type ec2Client interface {
@@ -42,6 +46,10 @@ type ec2Client interface {
 	DescribeInstances(ctx context.Context,
 		params *ec2.DescribeInstancesInput,
 		optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
+	// Add DescribeImages method
+	DescribeImages(ctx context.Context,
+		params *ec2.DescribeImagesInput,
+		optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error)
 }
 type awsProvider struct {
 	// Make ec2Client a mockable interface
@@ -65,6 +73,17 @@ func NewProvider(config *Config) (cloud.Provider, error) {
 	provider := &awsProvider{
 		ec2Client:     ec2Client,
 		serviceConfig: config,
+	}
+
+	// If root volume size is set, then get the device name from the AMI and update the serviceConfig
+	if config.RootVolumeSize > 0 {
+		// Get the device name from the AMI
+		deviceName, err := provider.getDeviceName(config.ImageId)
+		if err != nil {
+			return nil, err
+		}
+		// Update the serviceConfig with the device name
+		config.RootDeviceName = deviceName
 	}
 
 	if err = provider.updateInstanceTypeSpecList(); err != nil {
@@ -97,6 +116,9 @@ func getIPs(instance types.Instance) ([]netip.Addr, error) {
 }
 
 func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID string, cloudConfig cloudinit.CloudConfigGenerator, spec cloud.InstanceTypeSpec) (*cloud.Instance, error) {
+
+	// Public IP address
+	var publicIPAddr netip.Addr
 
 	instanceName := util.GenerateInstanceName(podName, sandboxID, maxInstanceNameLen)
 
@@ -194,6 +216,18 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 		}
 	}
 
+	// Add block device mappings to the instance to set the root volume size
+	if p.serviceConfig.RootVolumeSize > 0 {
+		input.BlockDeviceMappings = []types.BlockDeviceMapping{
+			{
+				DeviceName: aws.String(p.serviceConfig.RootDeviceName),
+				Ebs: &types.EbsBlockDevice{
+					VolumeSize: aws.Int32(int32(p.serviceConfig.RootVolumeSize)),
+				},
+			},
+		}
+	}
+
 	logger.Printf("CreateInstance: name: %q", instanceName)
 
 	result, err := p.ec2Client.RunInstances(ctx, input)
@@ -212,37 +246,14 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 	}
 
 	if p.serviceConfig.UsePublicIP {
-		describeInput := &ec2.DescribeInstancesInput{
-			InstanceIds: []string{instanceID},
-		}
-		// Create a waiter
-		waiter := ec2.NewInstanceRunningWaiter(p.ec2Client)
-		// Wait for the instance to be running
-		err = waiter.Wait(context.TODO(), describeInput, 120*time.Second)
-		if err != nil {
-			logger.Printf("failed to wait for the instance to be up: %v ", err)
-			return nil, err
-		}
-
-		describeOutput, err := p.ec2Client.DescribeInstances(ctx, describeInput)
-		if err != nil {
-			logger.Printf("Unable to describe the instance ")
-			return nil, err
-		}
-
-		publicIP := describeOutput.Reservations[0].Instances[0].PublicIpAddress
-		if publicIP == nil {
-			return nil, fmt.Errorf("public IP is nil")
-		}
-
-		logger.Printf("public podNodeIP (%s)", *publicIP)
-
-		ip, err := netip.ParseAddr(*publicIP)
+		// Get the public IP address of the instance
+		publicIPAddr, err = p.getPublicIP(ctx, instanceID)
 		if err != nil {
 			return nil, err
 		}
 
-		ips[0] = ip
+		// Replace the first IP address with the public IP address
+		ips[0] = publicIPAddr
 
 	}
 
@@ -365,6 +376,7 @@ func (p *awsProvider) getPublicIP(ctx context.Context, instanceID string) (netip
 		logger.Printf("failed to describe the instance : %v ", err)
 		return netip.Addr{}, err
 	}
+
 	// Get the public IP address from InstanceNetworkInterfaceAssociation
 	publicIP := describeInstanceOutput.Reservations[0].Instances[0].NetworkInterfaces[0].Association.PublicIp
 
