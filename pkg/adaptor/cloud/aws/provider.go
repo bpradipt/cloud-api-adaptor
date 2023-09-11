@@ -226,6 +226,21 @@ func (p *awsProvider) CreateInstance(ctx context.Context, podName, sandboxID str
 			input.SecurityGroupIds = nil
 
 		}
+
+		// Ref: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/snp-work.html
+		// Use the following CLI command to retrieve the list of instance types that support AMD SEV-SNP:
+		// aws ec2 describe-instance-types \
+		//--filters Name=processor-info.supported-features,Values=amd-sev-snp \
+		//--query 'InstanceTypes[*].InstanceType'
+		// Using AMD SEV-SNP requires an AMI with uefi or uefi-preferred boot enabled
+		if !p.serviceConfig.DisableCVM {
+			//  Add AmdSevSnp Cpu options to the instance
+			input.CpuOptions = &types.CpuOptionsRequest{
+				// Add AmdSevSnp Cpu options to the instance
+				AmdSevSnp: types.AmdSevSnpSpecificationEnabled,
+			}
+		}
+
 	}
 
 	// Add block device mappings to the instance to set the root volume size
