@@ -45,6 +45,32 @@ func isAzure(ctx context.Context) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
+// Add a method to check if the VM is running on AWS
+// by checking if the AWS IMDS endpoint is reachable
+// If the VM is running on AWS, return true
+func isAWS(ctx context.Context) bool {
+
+	// Create a new HTTP client
+	client := &http.Client{}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, AWSImdsUrl, nil)
+	if err != nil {
+		fmt.Printf("failed to create request: %s\n", err)
+		return false
+	}
+
+	// Send the request and retrieve the response
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("failed to send request: %s\n", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	// Check if the response was successful
+	return resp.StatusCode == http.StatusOK
+}
+
 // Get the URL to retrieve the userData from the instance metadata service
 func getUserDataURL(ctx context.Context) string {
 	userDataUrl := ""
@@ -52,6 +78,11 @@ func getUserDataURL(ctx context.Context) string {
 	if isAzure(ctx) {
 		// If the VM is running on Azure, retrieve the userData from the Azure IMDS endpoint
 		userDataUrl = AzureUserDataImdsUrl
+	}
+
+	if isAWS(ctx) {
+		// If the VM is running on AWS, retrieve the userData from the AWS IMDS endpoint
+		userDataUrl = AWSUserDataImdsUrl
 	}
 
 	return userDataUrl
@@ -70,7 +101,7 @@ func getUserData(ctx context.Context, url string) (string, error) {
 	client := &http.Client{}
 
 	// Create a new request to retrieve the VM's userData
-	// Example request for Azure
+	// Example request for Azure. The same works for AWS
 	// curl -H Metadata:true --noproxy "*" "http://169.254.169.254/metadata/instance/compute/userData?api-version=2021-01-01&format=text" | base64 --decode
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
