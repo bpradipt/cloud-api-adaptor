@@ -17,7 +17,11 @@ func (i *securityGroupIds) String() string {
 }
 
 func (i *securityGroupIds) Set(value string) error {
-	*i = append(*i, strings.Split(value, ",")...)
+	if len(value) == 0 {
+		*i = make(securityGroupIds, 0)
+	} else {
+		*i = append(*i, strings.Split(value, ",")...)
+	}
 	return nil
 }
 
