@@ -71,26 +71,27 @@ func isAWS(ctx context.Context) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// Get the URL to retrieve the userData from the instance metadata service
-func getUserDataURL(ctx context.Context) string {
-	userDataUrl := ""
+// Get the provider and the URL to retrieve the userData from the instance metadata service
+func getProviderAndUserDataURL(ctx context.Context) (provider string, userDataUrl string) {
 
 	if isAzure(ctx) {
+		provider = providerAzure
 		// If the VM is running on Azure, retrieve the userData from the Azure IMDS endpoint
 		userDataUrl = AzureUserDataImdsUrl
 	}
 
 	if isAWS(ctx) {
+		provider = providerAws
 		// If the VM is running on AWS, retrieve the userData from the AWS IMDS endpoint
 		userDataUrl = AWSUserDataImdsUrl
 	}
 
-	return userDataUrl
+	return provider, userDataUrl
 }
 
 // Add a method to retrieve userData from the instance metadata service
 // and return it as a string
-func getUserData(ctx context.Context, url string) (string, error) {
+func getUserDataForAzure(ctx context.Context, url string) (string, error) {
 
 	// If url is empty then return empty string
 	if url == "" {
@@ -101,7 +102,7 @@ func getUserData(ctx context.Context, url string) (string, error) {
 	client := &http.Client{}
 
 	// Create a new request to retrieve the VM's userData
-	// Example request for Azure. The same works for AWS
+	// Example request for Azure.
 	// curl -H Metadata:true --noproxy "*" "http://169.254.169.254/metadata/instance/compute/userData?api-version=2021-01-01&format=text" | base64 --decode
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -161,6 +162,7 @@ func getUserData(ctx context.Context, url string) (string, error) {
 		    "tls-server-cert": "-----BEGIN CERTIFICATE-----\n....\n-----END CERTIFICATE-----\n",
 		    "tls-client-ca": "-----BEGIN CERTIFICATE-----\n....\n-----END CERTIFICATE-----\n",
 		    "aa-kbc-params": "cc_kbc::http://192.168.100.2:8080"
+			"auth-json": "..."
 
 		}
 	*/
@@ -174,6 +176,52 @@ func getUserData(ctx context.Context, url string) (string, error) {
 	}
 
 	return string(decoded), nil
+}
+
+// Add a method to retrieve userData from the instance metadata service
+// and return it as a string
+func getUserDataForAws(ctx context.Context, url string) (string, error) {
+
+	// If url is empty then return empty string
+	if url == "" {
+		return "", fmt.Errorf("url is empty")
+	}
+
+	// Create a new HTTP client
+	client := &http.Client{}
+
+	// Create a new request to retrieve the VM's userData
+	// Example request for Azure.
+	// curl http://169.254.169.254/latest/user-data
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %s", err)
+
+	}
+
+	// Send the request and retrieve the response
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %s", err)
+
+	}
+	defer resp.Body.Close()
+
+	// Check if the response was successful
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to retrieve userData: %s", resp.Status)
+
+	}
+
+	// Read the response body and return it as a string
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %s", err)
+
+	}
+
+	return string(body), nil
 }
 
 // Add method to parse the userData and copy it to a file
@@ -243,14 +291,22 @@ func provisionFiles(cmd *cobra.Command, args []string) error {
 	ctx, cancel = context.WithTimeout(context.Background(), time.Duration(cfg.userDataFetchTimeout)*time.Second)
 	defer cancel()
 
-	// Get the userData URL
-	userDataUrl := getUserDataURL(ctx)
+	// Get the provider and userData URL
+	provider, userDataUrl := getProviderAndUserDataURL(ctx)
 
 	fmt.Printf("userDataUrl: %s\n", userDataUrl)
 
 	err := retry.Do(
 		func() error {
-			cfg.userData, _ = getUserData(ctx, userDataUrl)
+
+			// Get the userData depending on the provider
+			if provider == providerAzure {
+				cfg.userData, _ = getUserDataForAzure(ctx, userDataUrl)
+			}
+			if provider == providerAws {
+				cfg.userData, _ = getUserDataForAws(ctx, userDataUrl)
+			}
+
 			if cfg.userData != "" && strings.Contains(cfg.userData, "podip") {
 				return nil // Valid user data, stop retrying
 			}
