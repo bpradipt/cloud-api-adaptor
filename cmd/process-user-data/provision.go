@@ -294,7 +294,7 @@ func provisionFiles(cmd *cobra.Command, args []string) error {
 	// Get the provider and userData URL
 	provider, userDataUrl := getProviderAndUserDataURL(ctx)
 
-	fmt.Printf("userDataUrl: %s\n", userDataUrl)
+	fmt.Printf("provider: %s, userDataUrl: %s\n", provider, userDataUrl)
 
 	err := retry.Do(
 		func() error {
@@ -330,6 +330,31 @@ func provisionFiles(cmd *cobra.Command, args []string) error {
 	if err := parseAndCopyUserData(cfg.userData, cfg.daemonConfigPath); err != nil {
 		fmt.Printf("Error: Failed to parse userData: %s\n", err)
 		return err
+	}
+
+	// Copy the authJson to the authJsonFilePath
+	config := getConfigFromUserData(cfg.userData)
+	if config.AuthJson != "" {
+		// Create file to copy the authJson to
+		// Create the directory.
+		err := os.MkdirAll(authJsonDirPath, 0755)
+		if err != nil {
+			return fmt.Errorf("failed to create auth json directory: %s", err)
+		}
+
+		// Create the file
+		file, err := os.Create(authJsonFilePath)
+		if err != nil {
+			return fmt.Errorf("failed to create file: %s", err)
+		}
+		defer file.Close()
+
+		// Write the authJson to the file
+		_, err = file.WriteString(config.AuthJson)
+		if err != nil {
+			return fmt.Errorf("failed to write authJson to file: %s", err)
+		}
+
 	}
 
 	return nil

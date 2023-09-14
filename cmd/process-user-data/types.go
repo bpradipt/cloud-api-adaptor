@@ -10,6 +10,9 @@ const (
 	AWSUserDataImdsUrl   = "http://169.254.169.254/latest/user-data"
 
 	defaultAgentConfigPath = "/etc/agent-config.toml"
+
+	authJsonDirPath  = "/etc/attestation-agent/"
+	authJsonFilePath = authJsonDirPath + "auth.json"
 )
 
 type Config struct {

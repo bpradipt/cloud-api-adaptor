@@ -108,7 +108,14 @@ func updateAgentConfig(cmd *cobra.Command, args []string) error {
 
 	if config.AuthJson != "" {
 		fmt.Printf("Updating image_registry_auth_file in agent config file with value\n")
-		agentConfig.ImageRegistryAuthFile = config.AuthJson
+		// Check if authJsonFilePath exists. If it exists update the file path in the
+		// agent config
+		if _, err := os.Stat(authJsonFilePath); err == nil {
+			// Update the file path in the agent config
+			agentConfig.ImageRegistryAuthFile = "file://" + authJsonFilePath
+		} else {
+			fmt.Printf("auth.json file doesn't exist. Not updating the image_registry_auth_file in agent config file\n")
+		}
 	}
 
 	// Write the updated agent config file

@@ -97,7 +97,7 @@ func TestGetUserData(t *testing.T) {
 
 	reqPath := srv.URL + "/metadata/instance/compute/userData"
 	// Call the getUserData function
-	userData, _ := getUserData(ctx, reqPath)
+	userData, _ := getUserDataForAzure(ctx, reqPath)
 
 	// Check that the userData is not empty
 	if userData == "" {
@@ -145,7 +145,7 @@ func TestInvalidGetUserDataInvalidUrl(t *testing.T) {
 	// Send request to invalid URL
 	reqPath := "invalidURL"
 	// Call the getUserData function
-	userData, _ := getUserData(ctx, reqPath)
+	userData, _ := getUserDataForAzure(ctx, reqPath)
 
 	// Check that the userData is empty
 	if userData != "" {
@@ -162,7 +162,7 @@ func TestInvalidGetUserDataEmptyUrl(t *testing.T) {
 	// Send request to empty URL
 	reqPath := ""
 	// Call the getUserData function
-	userData, _ := getUserData(ctx, reqPath)
+	userData, _ := getUserDataForAzure(ctx, reqPath)
 
 	// Check that the userData is empty
 	if userData != "" {
@@ -251,7 +251,7 @@ func TestParsePlainTextUserData(t *testing.T) {
 
 	reqPath := srv.URL + "/metadata/instance/compute/userData"
 	// Call the getUserData function
-	userData, _ := getUserData(ctx, reqPath)
+	userData, _ := getUserDataForAzure(ctx, reqPath)
 
 	// Check that the userData is empty. Since plain text userData is not supported
 	if userData != "" {
