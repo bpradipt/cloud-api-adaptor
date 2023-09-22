@@ -19,6 +19,10 @@ source "azure-arm" "ubuntu" {
   managed_image_name                = "${var.az_image_name}"
   managed_image_resource_group_name = "${var.resource_group}"
   build_resource_group_name         = "${var.resource_group}"
+
+  virtual_network_name              = "${var.virtual_network_name}"
+  virtual_network_subnet_name       = "${var.virtual_network_subnet_name}"
+  virtual_network_resource_group_name = "${var.virtual_network_resource_group_name}"
 }
 
 build {

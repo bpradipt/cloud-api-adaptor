@@ -85,3 +85,17 @@ variable "plan_publisher" {
   default = ""
 }
 
+variable "virtual_network_name" {
+  type    = string
+  default = ""
+}
+
+variable "virtual_network_subnet_name" {
+  type    = string
+  default = ""
+}
+
+variable "virtual_network_resource_group_name" {
+  type    = string
+  default = ""
+}
