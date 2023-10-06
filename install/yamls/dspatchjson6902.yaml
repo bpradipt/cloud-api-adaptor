@@ -1,0 +1,9 @@
+- op: replace
+  path: /spec/template/spec/nodeSelector
+  value:
+    node.kubernetes.io/worker: ""
+
+- op: replace
+  path: /metadata/namespace
+  value: confidential-containers-system
+
