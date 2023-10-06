@@ -86,10 +86,10 @@ teardown() {
 	EOF
 
 	kubectl set env deployment/peer-pods-webhook-controller-manager \
-		-n peer-pods-webhook-system TARGET_RUNTIMECLASS="$runtimeclass"
+		-n confidential-containers-system TARGET_RUNTIMECLASS="$runtimeclass"
 
 	kubectl set env deployment/peer-pods-webhook-controller-manager \
-		-n peer-pods-webhook-system POD_VM_INSTANCE_TYPE="$instance_type"
+		-n confidential-containers-system POD_VM_INSTANCE_TYPE="$instance_type"
 
 	cat "$pod_file" | sed -e 's/^\(\s*runtimeClassName:\).*/\1 '${runtimeclass}'/' | \
 		kubectl apply -f -

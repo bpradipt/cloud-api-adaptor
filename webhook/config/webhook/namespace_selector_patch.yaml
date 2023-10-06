@@ -9,5 +9,5 @@ webhooks:
     - key: kubernetes.io/metadata.name
       operator: NotIn
       values:
-      - peer-pods-webhook-system
+      - confidential-containers-system
       - kube-system

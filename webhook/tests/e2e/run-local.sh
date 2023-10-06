@@ -57,7 +57,7 @@ cluster_up() {
 # Install the webhook and ensure it is ready to use.
 #
 install_webhook() {
-	local ns="peer-pods-webhook-system"
+	local ns="confidential-containers-system"
 
 	pushd "$webhook_dir" >/dev/null
 	make deploy
