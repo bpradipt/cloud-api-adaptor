@@ -20,12 +20,12 @@ variable "disk_size" {
 
 variable "cloud_image_checksum" {
   type    = string
-  default = "d96622d77bcbab5526fd42e7d933ee851d239327946992a018b0bfc9fad777e7"
+  default = "2461b36d86ac524e755c56e25cdc1537c92aec8bac6d3e1795fa92b105beba2f"
 }
 
 variable "cloud_image_url" {
   type    = string
-  default = "https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
+  default = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
 }
 
 variable "memory" {
