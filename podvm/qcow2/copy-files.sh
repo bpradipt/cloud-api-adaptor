@@ -22,6 +22,7 @@ if [ -e /tmp/files/etc/certificates/ca.crt ]; then
 fi
 
 sudo mkdir -p /usr/local/bin
+sudo mkdir -p /usr/share/oci/hooks/prestart
 sudo cp -a /tmp/files/usr/* /usr/
 
 sudo cp -a /tmp/files/pause_bundle /
