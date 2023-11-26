@@ -1,0 +1,6 @@
+{
+  "activation_flag": "HOOK",
+  "program_path": "/usr/bin/blobfuse2",
+  "host_mountpoint": "/blobdata",
+  "container_mountpoint": "/blobdata"
+}
