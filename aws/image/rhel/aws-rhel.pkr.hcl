@@ -97,4 +97,39 @@ build {
       "sudo -E bash ~/misc-settings.sh"
     ]
   }
+
+  # Addons
+  provisioner "shell-local" {
+    command = "tar cf toupload/addons.tar -C ../../podvm addons"
+  }
+
+  provisioner "file" {
+    source      = "toupload"
+    destination = "/tmp/"
+  }
+
+  provisioner "shell" {
+    inline = [
+      "cd /tmp && tar xf toupload/addons.tar",
+      "rm toupload/addons.tar"
+    ]
+  }
+
+  provisioner "file" {
+    source      = "${var.config_script_src}/setup_addons.sh"
+    destination = "~/setup_addons.sh"
+  }
+
+  provisioner "shell" {
+    remote_folder = "~"
+    environment_vars = [
+      "CLOUD_PROVIDER=${var.cloud_provider}",
+      "PODVM_DISTRO=${var.podvm_distro}",
+      "DISABLE_CLOUD_CONFIG=${var.disable_cloud_config}"
+    ]
+    inline = [
+      "sudo -E bash ~/setup_addons.sh"
+    ]
+  }
+
 }
