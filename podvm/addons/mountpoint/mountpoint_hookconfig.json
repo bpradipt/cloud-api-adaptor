@@ -1,0 +1,6 @@
+{
+  "activation_flag": "HOOK",
+  "program_path": "/usr/bin/mount-s3",
+  "host_mountpoint": "/s3data",
+  "container_mountpoint": "/s3data"
+}
