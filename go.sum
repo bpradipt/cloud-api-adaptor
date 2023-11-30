@@ -300,6 +300,8 @@ github.com/blang/semver/v4 v4.0.0/go.mod h1:IbckMUScFkM3pff0VJDNKRiT6TG/YpiHIM2y
 github.com/blizzy78/varnamelen v0.3.0/go.mod h1:hbwRdBvoBqxk34XyQ6HA0UH3G0/1TKuv5AC4eaBT0Ec=
 github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869/go.mod h1:Ekp36dRnpXw/yCqJaO+ZrUyxD+3VXMFFr56k5XYrpB4=
 github.com/bombsimon/wsl/v3 v3.3.0/go.mod h1:st10JtZYLE4D5sC7b8xV4zTKZwAQjCH/Hy2Pm1FNZIc=
+github.com/bpradipt/kata-containers/src/runtime v0.0.0-20231128180340-b1e1444ef148 h1:2RFQkWzcAej2da3qJEhNv+Mvl2HqeRsCk4ZmMYeeZnU=
+github.com/bpradipt/kata-containers/src/runtime v0.0.0-20231128180340-b1e1444ef148/go.mod h1:4i+EBdCeAg34WOxQMjiJ9e7ZtwtI7C5ZSK4tg70hoeE=
 github.com/breml/bidichk v0.1.1/go.mod h1:zbfeitpevDUGI7V91Uzzuwrn4Vls8MoBMrwtt78jmso=
 github.com/bshuster-repo/logrus-logstash-hook v0.4.1/go.mod h1:zsTqEiSzDgAa/8GZR7E1qaXrhYNDKBYy5/dWPTIflbk=
 github.com/buger/goterm v1.0.4/go.mod h1:HiFWV3xnkolgrBV3mY8m0X0Pumt4zg4QhbdOzQtB8tE=
@@ -1211,8 +1213,6 @@ github.com/karrick/godirwalk v1.8.0/go.mod h1:H5KPZjojv4lE+QYImBI8xVtrBRgYrIVsaR
 github.com/karrick/godirwalk v1.10.3/go.mod h1:RoGL9dQei4vP9ilrpETWE8CLOZ1kiN0LhBygSwrAsHA=
 github.com/karrick/godirwalk v1.15.3/go.mod h1:j4mkqPuvaLI8mp1DroR3P6ad7cyYd4c1qeJ3RV7ULlk=
 github.com/karrick/godirwalk v1.16.1/go.mod h1:j4mkqPuvaLI8mp1DroR3P6ad7cyYd4c1qeJ3RV7ULlk=
-github.com/kata-containers/kata-containers/src/runtime v0.0.0-20231109143605-6c2a2a14fe78 h1:fnkxqwsxbHFB/wpeE4j3xzdWEUpr3udU7Higo7lvUVc=
-github.com/kata-containers/kata-containers/src/runtime v0.0.0-20231109143605-6c2a2a14fe78/go.mod h1:4i+EBdCeAg34WOxQMjiJ9e7ZtwtI7C5ZSK4tg70hoeE=
 github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51/go.mod h1:CzGEWj7cYgsdH8dAjBGEr58BoE7ScuLd+fwFZ44+/x8=
 github.com/kdomanski/iso9660 v0.3.5 h1:LO1n75zPjLeDQkz0Pyk1eZ7JGinjKjk2C174GSABVwY=
 github.com/kdomanski/iso9660 v0.3.5/go.mod h1:K+UlIGxKgtrdAWyoigPnFbeQLVs/Xudz4iztWFThBwo=
