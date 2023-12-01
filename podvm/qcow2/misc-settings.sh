@@ -99,13 +99,6 @@ OPTIONS=-listen 0.0.0.0:${FORWARDER_PORT}
 END
 fi
 
-# Copy OPA binary to pod vm
-if  [[ "$PODVM_DISTRO" == "ubuntu" ]] || [[ "$PODVM_DISTRO" == "rhel" ]]; then
-    # Copy opa binary in /usr/local/bin
-    curl -L -o opa https://openpolicyagent.org/downloads/v0.58.0/opa_linux_amd64_static
-    install -D -o root -g root -m 0755 opa -T /usr/local/bin/opa
-fi
-
 # Disable unnecessary systemd services
 
 case $PODVM_DISTRO in

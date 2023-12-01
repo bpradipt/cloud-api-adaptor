@@ -31,8 +31,10 @@ RUST_TARGET := $(RUST_ARCH)-unknown-linux-$(LIBC)
 
 CDH_RESOURCE_PROVIDER ?= kbs
 SEALED_SECRET ?= yes
+AGENT_POLICY ?= yes
 
 FORCE_TARGET := $(if $(FORCE),force,)
+
 
 ifneq ($(HOST_ARCH),$(ARCH))
     ifeq ($(CC),cc)
@@ -65,9 +67,14 @@ CONFIDENTIAL_DATA_HUB = $(FILES_DIR)/usr/local/bin/confidential-data-hub
 API_SERVER_REST  = $(FILES_DIR)/usr/local/bin/api-server-rest
 PROCESS_USER_DATA = $(FILES_DIR)/usr/local/bin/process-user-data
 
+OPA_BIN = $(FILES_DIR)/usr/local/bin/opa
+OPA_SRC = opa
+OPA_BIN_URL = $(opa_$(DEB_ARCH)_binary_url)
+
 # Allow BINARIES to be overriden externally
 
-BINARIES ?= $(AGENT_PROTOCOL_FORWARDER) $(KATA_AGENT) $(PAUSE) $(ATTESTATION_AGENT) $(CONFIDENTIAL_DATA_HUB) $(API_SERVER_REST) $(PROCESS_USER_DATA)
+BINARIES ?= $(AGENT_PROTOCOL_FORWARDER) $(KATA_AGENT) $(PAUSE) $(ATTESTATION_AGENT) $(CONFIDENTIAL_DATA_HUB) $(API_SERVER_REST) $(PROCESS_USER_DATA) \
+		$(OPA_BIN)
 
 $(shell sed -i "s|\(aa_kbc_params = \)\"[^\"]*\"|\1\"${AA_KBC}::${KBC_URI}\"|g" $(FILES_DIR)/etc/agent-config.toml)
 
@@ -119,7 +126,7 @@ $(PROCESS_USER_DATA): always
 	install -D --compare "$(ROOT_DIR)/process-user-data" "$@"
 
 $(KATA_AGENT): $(FORCE_TARGET) | $(STATIC_LIBSECCOMP)
-	cd "$(KATA_AGENT_SRC)" && $(RUST_FLAGS) $(MAKE) BUILD_TYPE=$(KATA_AGENT_BUILD_TYPE) SEALED_SECRET=${SEALED_SECRET} LIBSECCOMP_LINK_TYPE=static LIBSECCOMP_LIB_PATH=$(dir $(STATIC_LIBSECCOMP))
+	cd "$(KATA_AGENT_SRC)" && $(RUST_FLAGS) $(MAKE) BUILD_TYPE=$(KATA_AGENT_BUILD_TYPE) SEALED_SECRET=${SEALED_SECRET} AGENT_POLICY=${AGENT_POLICY} LIBSECCOMP_LINK_TYPE=static LIBSECCOMP_LIB_PATH=$(dir $(STATIC_LIBSECCOMP))
 	install -D --compare "$(KATA_AGENT_SRC)/target/$(RUST_TARGET)/$(KATA_AGENT_BUILD_TYPE)/$(@F)" "$@"
 
 $(STATIC_LIBSECCOMP): $(KATA_CONTAINERS_SRC)
@@ -165,6 +172,14 @@ $(API_SERVER_REST): $(FORCE_TARGET) | $(GUEST_COMPONENTS_SRC)
 	cd "$(GUEST_COMPONENTS_SRC)/api-server-rest" && CC= ARCH=$(ARCH) $(MAKE) LIBC="$(LIBC)"
 	mkdir -p "$(@D)"
 	install --compare "$(GUEST_COMPONENTS_SRC)/target/$(RUST_TARGET)/release/api-server-rest" "$@"
+
+$(OPA_BIN):
+ifeq ($(AGENT_POLICY),yes)
+	mkdir -p $(OPA_SRC)
+	# Download and copy opa binary under files/usr/local/bin
+	curl -L -o $(OPA_SRC)/opa $(OPA_BIN_URL)
+	install -D -m 0755 $(OPA_SRC)/opa -T "$@"
+endif
 
 clean_sources:
 	[ -d "$(GUEST_COMPONENTS_SRC)" ] && cd "$(GUEST_COMPONENTS_SRC)" && git clean -xfd

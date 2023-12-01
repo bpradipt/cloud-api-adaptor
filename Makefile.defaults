@@ -49,3 +49,5 @@ GUEST_COMPONENTS_REPO := $(or $(GUEST_COMPONENTS_REPO),$(call query,git.guest-co
 GUEST_COMPONENTS_VERSION := $(or $(GUEST_COMPONENTS_VERSION),$(call query,git.guest-components.reference))
 PAUSE_REPO :=  $(or $(PAUSE_REPO),$(call query,oci.pause.registry))
 PAUSE_VERSION := $(or $(PAUSE_VERSION),$(call query,oci.pause.tag))
+
+opa_amd64_binary_url := $(call query,podvm_binaries.opa.amd64.url)
