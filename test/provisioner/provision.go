@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -46,6 +47,7 @@ type CloudAPIAdaptor struct {
 	namespace            string               // The CoCo namespace
 	installOverlay       InstallOverlay       // Pointer to the kustomize overlay
 	runtimeClass         *nodev1.RuntimeClass // The Kata Containers runtimeclass
+	rootSrcDir           string               // The root src directory of cloud-api-adaptor
 }
 
 type NewInstallOverlayFunc func(installDir, provider string) (InstallOverlay, error)
@@ -78,6 +80,7 @@ func NewCloudAPIAdaptor(provider string, installDir string) (*CloudAPIAdaptor, e
 		namespace:            namespace,
 		installOverlay:       overlay,
 		runtimeClass:         &nodev1.RuntimeClass{ObjectMeta: metav1.ObjectMeta{Name: "kata-remote", Namespace: ""}},
+		rootSrcDir:           filepath.Dir(installDir),
 	}, nil
 }
 
@@ -253,6 +256,25 @@ func (p *CloudAPIAdaptor) Deploy(ctx context.Context, cfg *envconf.Config, props
 	fmt.Printf("Wait for the %s runtimeclass be created\n", p.runtimeClass.GetName())
 	if err = wait.For(conditions.New(resources).ResourcesFound(&nodev1.RuntimeClassList{Items: []nodev1.RuntimeClass{*p.runtimeClass}}),
 		wait.WithTimeout(time.Second*60)); err != nil {
+		return err
+	}
+
+	log.Info("Installing peerpod-ctrl")
+	cmd = exec.Command("make", "-C", "peerpod-ctrl", "deploy")
+	// Run the deployment from the root src dir
+	cmd.Dir = p.rootSrcDir
+	stdoutStderr, err = cmd.CombinedOutput()
+	log.Tracef("%v, output: %s", cmd, stdoutStderr)
+	if err != nil {
+		return err
+	}
+
+	// Wait for the peerpod-ctrl deployment to be ready
+	fmt.Printf("Wait for the peerpod-ctrl deployment be available\n")
+	if err = wait.For(conditions.New(resources).DeploymentConditionMatch(
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "peerpod-ctrl-controller-manager", Namespace: p.namespace}},
+		appsv1.DeploymentAvailable, corev1.ConditionTrue),
+		wait.WithTimeout(time.Minute*5)); err != nil {
 		return err
 	}
 
