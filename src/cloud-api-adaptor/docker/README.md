@@ -8,12 +8,11 @@ The `docker` provider simulates a pod VM inside a docker container.
 
 - Install `docker` [engine](https://docs.docker.com/engine/install/) on your K8s worker node
 
-  Ensure docker engine supports API version 1.44+. You can verify it by running 
+  Ensure docker engine supports API version 1.44+. You can verify it by running
   `docker version`.
   Docker engine version 26+ supports API 1.44.
 
   Ensure you complete the [post install steps](https://docs.docker.com/engine/install/linux-postinstall/) if using non-root user
-  
   
 - Kubernetes cluster
 
@@ -26,14 +25,13 @@ export CLOUD_PROVIDER=docker
 ```
 
 - Build the required pod VM binaries
- 
+
 ```bash
 cd src/cloud-api-adaptor/docker/image
 make
 ```
 
-This will build the required binaries inside a container and place 
-it under `resources/binaries-tree`
+This will build the required binaries inside a container and place it under `resources/binaries-tree`
 
 - Build the pod VM image
 
@@ -56,7 +54,6 @@ docker pull quay.io/confidential-containers/podvm-docker-image
 Note that before you can spin up a pod, the podvm image must be available on the K8s worker node
 with the docker engine installed.
 
-
 ## Build CAA container image
 
 > **Note**: If you have made changes to the CAA code and you want to deploy those changes then follow [these instructions](https://github.com/confidential-containers/cloud-api-adaptor/blob/main/src/cloud-api-adaptor/install/README.md#building-custom-cloud-api-adaptor-image) to build the container image from the root of this repository.
@@ -64,7 +61,6 @@ with the docker engine installed.
 ## Deploy CAA
 
 The following [`kustomization.yaml`](../install/overlays/docker/kustomization.yaml) is used.
-
 
 ### Deploy CAA on the Kubernetes cluster
 
@@ -80,8 +76,67 @@ For changing the CAA image to your custom built image (eg. `quay.io/myuser/cloud
 you can use the following:
 
 ```bash
-kubectl set image ds/cloud-api-adaptor-daemonset -n confidential-containers-system cloud-api-adaptor-con=quay.io/myuser/cloud-api-adaptor
+export CAA_IMAGE=quay.io/myuser/cloud-api-adaptor
+kubectl set image ds/cloud-api-adaptor-daemonset -n confidential-containers-system cloud-api-adaptor-con="$CAA_IMAGE"
 ```
+
+## Running the CAA e2e tests
+
+### Test Prerequisites
+
+Following prerequisites are needed on the test system:
+
+- make
+- go
+- yq
+- kubectl
+- kind
+- docker
+  
+A `prereqs.sh` helper script is available under `src/cloud-api-adaptor/docker` to install/uninstall the prerequisites.
+
+Note: If using the `prereqs.sh` helper script to install the prerequisites, then reload the shell to ensure new permissions
+are in place to run `docker` and other commands.
+
+### Test Execution
+
+In order to run the tests, edit the file `src/cloud-api-adaptor/test/provisioner/docker/provision_docker.properties`
+and update the `CAA_IMAGE` and `CAA_IMAGE_TAG` variables with your custom CAA image and tag.
+
+You can run the CAA e2e [tests/e2e/README.md](../test/e2e/README.md) by running the following command:
+
+```sh
+TEST_PODVM_IMAGE=<podvm-image> TEST_PROVISION=yes CLOUD_PROVIDER=docker TEST_PROVISION_FILE=$(pwd)/test/provisioner/docker/provision_docker.properties test-e2e
+```
+
+This will create a two node kind cluster, automatically download the pod VM image mentioned in the `provision_docker.properties`
+file and run the tests.
+
+Note: To overcome docker rate limiting issue or to download images from private registries,
+create a `config.json` file under `/tmp` with your registry secrets.
+For example:
+If your docker registry user is `someuser` and password is `somepassword` then create the auth string
+as shown below:
+
+```sh
+echo -n "someuser:somepassword" | base64
+c29tZXVzZXI6c29tZXBhc3N3b3Jk
+```
+
+This auth string needs to be used in `/tmp/config.json` as shown below:
+
+```sh
+{
+        "auths": {
+                "https://index.docker.io/v1/": {
+                        "auth": "c29tZXVzZXI6c29tZXBhc3N3b3Jk"
+                }
+        }
+}
+```
+
+If you want to use a different location for the registry secret, then remember to update the same
+in the `docker/kind-config.yaml` file.
 
 ## Run sample application
 
@@ -138,12 +193,12 @@ Ensure that the pod is up and running:
 kubectl get pods -n default
 ```
 
-You could run `docker ps` command to view the docker container running. 
+You could run `docker ps` command to view the docker container running.
 The docker container name will be the pod name prefixed with `podvm`.
 
 Example:
 
-```
+```sh
 $ kubectl get pods
 NAME                   READY   STATUS    RESTARTS        AGE
 nginx-dbc79c87-jt49h   1/1     Running   1 (3m22s ago)   3m29s
@@ -151,7 +206,7 @@ nginx-dbc79c87-jt49h   1/1     Running   1 (3m22s ago)   3m29s
 $ docker ps
 CONTAINER ID   IMAGE                                                COMMAND                  CREATED         STATUS         PORTS       NAMES
 e60b768b847d   quay.io/confidential-containers/podvm-docker-image   "/usr/local/bin/entr…"   3 minutes ago   Up 3 minutes   15150/tcp   podvm-nginx-dbc79c87-jt49h-b9361aef
-``` 
+```
 
 For debugging you can use docker commands like `docker ps`, `docker logs`, `docker exec`.
 
@@ -160,4 +215,3 @@ For debugging you can use docker commands like `docker ps`, `docker logs`, `dock
 ```sh
 kubectl delete deployment nginx
 ```
-
