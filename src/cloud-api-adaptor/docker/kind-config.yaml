@@ -1,0 +1,16 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  disableDefaultCNI: true # disable kindnet
+  podSubnet: 192.168.0.0/16 # set to Calico's default subnet
+nodes:
+  - role: control-plane
+    # Same image version as used for pod VM base image
+    image: kindest/node:v1.27.11
+  - role: worker
+    image: kindest/node:v1.27.11
+    extraMounts:
+      - hostPath: /var/run/docker.sock
+        containerPath: /var/run/docker.sock
+      - hostPath: /var/lib/docker
+        containerPath: /var/lib/docker

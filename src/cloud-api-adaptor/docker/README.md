@@ -80,7 +80,29 @@ For changing the CAA image to your custom built image (eg. `quay.io/myuser/cloud
 you can use the following:
 
 ```bash
-kubectl set image ds/cloud-api-adaptor-daemonset -n confidential-containers-system cloud-api-adaptor-con=quay.io/myuser/cloud-api-adaptor
+export CAA_IMAGE=quay.io/myuser/cloud-api-adaptor
+kubectl set image ds/cloud-api-adaptor-daemonset -n confidential-containers-system cloud-api-adaptor-con="$CAA_IMAGE"
+```
+
+## Running the CAA e2e tests
+
+Edit the file `src/cloud-api-adaptor/docker/provision_docker.properties` and update the `CAA_IMAGE`
+and `CAA_IMAGE_TAG` variables with your custom CAA image and tag.
+
+You can run the CAA e2e [tests/e2e/README.md](../test/e2e/README.md) by running the following command:
+
+```sh
+cd src/cloud-api-adaptor
+make TEST_PROVISION=yes CLOUD_PROVIDER=docker TEST_PROVISION_FILE=$(pwd)/docker/provision_docker.properties test-e2e
+```
+
+You can modify the variables defined in `provision_docker.properties` if required.
+
+If you are using a custom pod VM image and modified the `DOCKER_PODVM_IMAGE` key
+in the `provision_docker.properties` file, then run the following command to test with the custom pod VM image:
+
+```sh
+TEST_PODVM_IMAGE=<your-custom-podvm-image> TEST_PROVISION=yes CLOUD_PROVIDER=docker TEST_PROVISION_FILE=$(pwd)/docker/provision_docker.properties test-e2e
 ```
 
 ## Run sample application
@@ -160,4 +182,3 @@ For debugging you can use docker commands like `docker ps`, `docker logs`, `dock
 ```sh
 kubectl delete deployment nginx
 ```
-
