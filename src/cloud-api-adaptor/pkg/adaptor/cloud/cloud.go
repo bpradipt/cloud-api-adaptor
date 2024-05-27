@@ -389,6 +389,13 @@ func (s *cloudService) StartVM(ctx context.Context, req *pb.StartVMRequest) (res
 
 func (s *cloudService) StopVM(ctx context.Context, req *pb.StopVMRequest) (*pb.StopVMResponse, error) {
 
+	// Get env variable KEEP_INSTANCE
+	keepInstance := os.Getenv("KEEP_INSTANCE")
+	if keepInstance == "true" {
+		logger.Printf("KEEP_INSTANCE is set to true, skipping VM deletion")
+		return &pb.StopVMResponse{}, nil
+	}
+
 	sid := sandboxID(req.Id)
 
 	sandbox, err := s.getSandbox(sid)
