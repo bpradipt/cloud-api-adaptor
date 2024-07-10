@@ -164,8 +164,8 @@ func createKindCluster(workingDir string) error {
 	// TODO: better handle stderr. Messages getting out of order.
 	cmd.Stderr = os.Stderr
 	cmd.Env = os.Environ()
-	// Set CLUSTER_NAME if available. Also unset KUBECONFIG so that the default path is used.
-	cmd.Env = append(cmd.Env, "CLUSTER_NAME="+DockerProps.ClusterName, "KUBECONFIG=")
+	// Set CLUSTER_NAME and CONTAINER_RUNTIME if available. Also unset KUBECONFIG so that the default path is used.
+	cmd.Env = append(cmd.Env, "CLUSTER_NAME="+DockerProps.ClusterName, "KUBECONFIG=", "CONTAINER_RUNTIME="+DockerProps.ContainerRuntime)
 	err := cmd.Run()
 	if err != nil {
 		log.Errorf("Error creating Kind cluster: %v", err)
