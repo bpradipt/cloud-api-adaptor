@@ -27,6 +27,9 @@ sudo cp -a /tmp/files/usr/* /usr/
 
 sudo cp -a /tmp/files/pause_bundle /
 
+sudo mkdir -p /image
+sudo cp -a /tmp/files/image_bundle/* /image/
+
 # Copy the kata-agent OPA policy files
 sudo mkdir -p /etc/kata-opa
 sudo cp -a /tmp/files/etc/kata-opa/* /etc/kata-opa/
