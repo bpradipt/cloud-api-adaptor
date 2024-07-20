@@ -1,0 +1,11 @@
+[Unit]
+Description=Mount unit for /run/kata-containers/image/overlay
+Before=kata-agent.service
+
+[Mount]
+What=tmpfs
+Where=/run/kata-containers/image/overlay
+Type=tmpfs
+
+[Install]
+WantedBy=multi-user.target
