@@ -122,7 +122,8 @@ func (p *azureProvider) create(ctx context.Context, parameters *armcompute.Virtu
 	return &resp.VirtualMachine, nil
 }
 
-func (p *azureProvider) buildNetworkConfig(nicName string) *armcompute.VirtualMachineNetworkInterfaceConfiguration {
+func (p *azureProvider) buildNetworkConfig(nicName string, publicIp bool) *armcompute.VirtualMachineNetworkInterfaceConfiguration {
+
 	ipConfig := armcompute.VirtualMachineNetworkInterfaceIPConfiguration{
 		Name: to.Ptr("ip-config"),
 		Properties: &armcompute.VirtualMachineNetworkInterfaceIPConfigurationProperties{
@@ -130,6 +131,16 @@ func (p *azureProvider) buildNetworkConfig(nicName string) *armcompute.VirtualMa
 				ID: to.Ptr(p.serviceConfig.SubnetId),
 			},
 		},
+	}
+
+	if publicIp {
+		publicIpConfig := armcompute.VirtualMachinePublicIPAddressConfiguration{
+			Name: to.Ptr(nicName),
+			Properties: &armcompute.VirtualMachinePublicIPAddressConfigurationProperties{
+				DeleteOption: to.Ptr(armcompute.DeleteOptionsDelete),
+			},
+		}
+		ipConfig.Properties.PublicIPAddressConfiguration = &publicIpConfig
 	}
 
 	config := armcompute.VirtualMachineNetworkInterfaceConfiguration{
@@ -345,7 +356,7 @@ func (p *azureProvider) getVMParameters(instanceSize, diskName, cloudConfig stri
 		}
 	}
 
-	networkConfig := p.buildNetworkConfig(nicName)
+	networkConfig := p.buildNetworkConfig(nicName, true)
 
 	vmParameters := armcompute.VirtualMachine{
 		Location: to.Ptr(p.serviceConfig.Region),
