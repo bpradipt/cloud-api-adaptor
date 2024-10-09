@@ -150,7 +150,7 @@ func DoTestCreatePeerPodContainerWithExternalIPAccess(t *testing.T, e env.Enviro
 
 func DoTestCreatePeerPodWithJob(t *testing.T, e env.Environment, assert CloudAssert) {
 	jobName := "job-pi"
-	image := "quay.io/prometheus/busybox:latest"
+	image := BUSYBOX_IMAGE
 	job := NewJob(E2eNamespace, jobName, 8, image)
 	expectedPodLogString := "3.14"
 	NewTestCase(t, e, "JobPeerPod", assert, "Job has been created").WithJob(job).WithExpectedPodLogString(expectedPodLogString).Run()
@@ -412,7 +412,7 @@ func DoTestPodToServiceCommunication(t *testing.T, e env.Environment, assert Clo
 	clientImageName := BUSYBOX_IMAGE
 	serverPodName := "test-server"
 	serverContainerName := "nginx"
-	serverImageName := "nginx:latest"
+	serverImageName := NGINX_PRIVILEGED_IMAGE
 	serviceName := "nginx-server"
 	labels := map[string]string{
 		"app": "nginx-server",
@@ -450,10 +450,10 @@ func DoTestPodToServiceCommunication(t *testing.T, e env.Environment, assert Clo
 func DoTestPodsMTLSCommunication(t *testing.T, e env.Environment, assert CloudAssert) {
 	clientPodName := "mtls-client"
 	clientContainerName := "curl"
-	clientImageName := "docker.io/curlimages/curl:8.4.0"
+	clientImageName := CURL_IMAGE
 	serverPodName := "mtls-server"
 	serverContainerName := "nginx"
-	serverImageName := "nginx:latest"
+	serverImageName := NGINX_PRIVILEGED_IMAGE
 	caService, _ := tlsutil.NewCAService("nginx")
 	serverCACertPEM := caService.RootCertificate()
 	serviceName := "nginx-mtls"

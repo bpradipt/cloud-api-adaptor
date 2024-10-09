@@ -26,6 +26,9 @@ import (
 )
 
 const BUSYBOX_IMAGE = "quay.io/prometheus/busybox:latest"
+const NGINX_UNPRIVILEGED_IMAGE = "quay.io/nginx/nginx-unprivileged:latest"
+const NGINX_PRIVILEGED_IMAGE = "quay.io/confidential-containers/test/nginx:latest"
+const CURL_IMAGE = "quay.io/curl/curl:latest"
 const WAIT_DEPLOYMENT_AVAILABLE_TIMEOUT = time.Second * 180
 const DEFAULT_AUTH_SECRET = "auth-json-secret-default"
 

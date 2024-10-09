@@ -11,7 +11,7 @@ import (
 // the test will retrieve a kbs token to verify a successful remote attestation
 func DoTestRemoteAttestation(t *testing.T, e env.Environment, assert CloudAssert, kbsEndpoint string) {
 	name := "remote-attestation"
-	image := "quay.io/curl/curl:latest"
+	image := CURL_IMAGE
 	// fail on non 200 code, silent, but output on failure
 	cmd := []string{"curl", "-f", "-s", "-S", "-o", "/dev/null", "http://127.0.0.1:8006/aa/token?token_type=kbs"}
 	initdata := fmt.Sprintf(testInitdata, kbsEndpoint, kbsEndpoint, kbsEndpoint)

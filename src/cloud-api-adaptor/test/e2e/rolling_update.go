@@ -41,7 +41,7 @@ func DoTestCaaDaemonsetRollingUpdate(t *testing.T, testEnv env.Environment, asse
 	}
 	verifyPodName := "verify-pod"
 	verifyContainerName := "verify-container"
-	verifyImageName := "quay.io/curl/curl:latest"
+	verifyImageName := CURL_IMAGE
 
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{

@@ -39,7 +39,8 @@ when running e2e tests:
 images=(
   "quay.io/prometheus/busybox:latest"
   "quay.io/confidential-containers/test-images:testworkdir"
-  "docker.io/library/nginx:latest"
+  "quay.io/confidential-containers/test/nginx:latest"
+  "quay.io/nginx/nginx-unprivileged:latest"
   "docker.io/curlimages/curl:8.4.0"
   "quay.io/curl/curl:latest"
 )
