@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+set -euxo pipefail
+
+echo "Enabling kata mount point"
+mkosi-chroot systemctl enable 'run-kata\x2dcontainers.mount'

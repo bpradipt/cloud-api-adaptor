@@ -1,0 +1,5 @@
+[nvidia-driver]
+name=nvidia-driver
+stream=550-dkms
+profiles=
+state=enabled
