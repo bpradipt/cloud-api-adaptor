@@ -29,7 +29,7 @@
               cryptsetup
               dnf5
               dosfstools
-              mkosi-full
+              mkosi
               mtools
               rpm
               squashfsTools
