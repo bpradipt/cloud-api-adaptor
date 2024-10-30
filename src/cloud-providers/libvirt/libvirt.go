@@ -258,6 +258,12 @@ func createDomainXMLs390x(client *libvirtClient, cfg *domainConfig, vm *vmConfig
 		Name:        cfg.name,
 		Description: "This Virtual Machine is the peer-pod VM",
 		OS: &libvirtxml.DomainOS{
+			Loader: &libvirtxml.DomainLoader{
+				Path:     "/usr/share/OVMF/OVMF_CODE.fd",
+				Readonly: "yes",
+				Type:     "pflash",
+			},
+
 			Type: &libvirtxml.DomainOSType{
 				Type:    typeHardwareVirtualMachine,
 				Arch:    archS390x,
@@ -333,7 +339,8 @@ func createDomainXMLx86_64(client *libvirtClient, cfg *domainConfig, vm *vmConfi
 		Memory:      &libvirtxml.DomainMemory{Value: cfg.mem, Unit: "GiB", DumpCore: "on"},
 		VCPU:        &libvirtxml.DomainVCPU{Value: cfg.cpu},
 		OS: &libvirtxml.DomainOS{
-			Type: &libvirtxml.DomainOSType{Arch: "x86_64", Type: typeHardwareVirtualMachine},
+			Firmware: "efi",
+			Type:     &libvirtxml.DomainOSType{Arch: "x86_64", Type: typeHardwareVirtualMachine},
 		},
 		// For Hot-Plug Feature.
 		Features: &libvirtxml.DomainFeatureList{
