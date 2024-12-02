@@ -157,7 +157,7 @@ func (s *PodVMNodeService) ReproduceNodeStageVolume(peerPodVolume *peerpodvolume
 		count := 0
 		reproduced := false
 		for {
-			glog.Infof("start to Reproducing NodeStageVolumeRequest for peer pod (retrying... %d/%d)", count, 20)
+			glog.Infof("start to Reproducing NodeStageVolumeRequest for peer pod (retrying... %d/%d)", count, 25)
 			// TODO: error check
 			_ = s.redirect(ctx, modifiedRequest, func(ctx context.Context, client csi.NodeClient) {
 				response, err := client.NodeStageVolume(ctx, &modifiedRequest)
@@ -176,14 +176,15 @@ func (s *PodVMNodeService) ReproduceNodeStageVolume(peerPodVolume *peerpodvolume
 					}
 				}
 			})
-			if count == 20 {
+			if count == 25 {
 				glog.Error("reaches max retry count. gave up Reproducing NodeStageVolumeRequest for peer pod")
 				break
 			}
 			if reproduced {
+				glog.Infof("Reproduced NodeStageVolumeRequest for peer pod successfully")
 				break
 			}
-			glog.Infof("failed to Reproducing NodeStageVolumeRequest for peer pod (retrying... %d/%d)", count, 20)
+			glog.Infof("failed to Reproducing NodeStageVolumeRequest for peer pod (retrying... %d/%d)", count, 25)
 			count++
 		}
 
@@ -202,7 +203,7 @@ func (s *PodVMNodeService) ReproduceNodePublishVolume(peerPodVolume *peerpodvolu
 		count := 0
 		reproduced := false
 		for {
-			glog.Infof("start to Reproducing nodePublishVolumeRequest for peer pod (retrying... %d/%d)", count, 20)
+			glog.Infof("start to Reproducing nodePublishVolumeRequest for peer pod (retrying... %d/%d)", count, 25)
 			// TODO: error check
 			_ = s.redirect(ctx, nodePublishVolumeRequest, func(ctx context.Context, client csi.NodeClient) {
 				response, err := client.NodePublishVolume(ctx, &nodePublishVolumeRequest)
@@ -221,14 +222,15 @@ func (s *PodVMNodeService) ReproduceNodePublishVolume(peerPodVolume *peerpodvolu
 					}
 				}
 			})
-			if count == 20 {
+			if count == 25 {
 				glog.Error("reaches max retry count. gave up Reproducing nodePublishVolumeRequest for peer pod")
 				break
 			}
 			if reproduced {
+				glog.Infof("Reproduced nodePublishVolumeRequest for peer pod successfully")
 				break
 			}
-			glog.Infof("failed to Reproducing nodePublishVolumeRequest for peer pod (retrying... %d/%d)", count, 20)
+			glog.Infof("failed to Reproducing nodePublishVolumeRequest for peer pod (retrying... %d/%d)", count, 25)
 			count++
 		}
 	}

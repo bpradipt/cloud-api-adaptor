@@ -97,6 +97,8 @@ func (s *ControllerService) CreateVolume(ctx context.Context, req *csi.CreateVol
 			volumeID := res.GetVolume().VolumeId
 			normalizedVolumeID := utils.NormalizeVolumeID(volumeID)
 			_, _ = s.createPeerpodVolume(normalizedVolumeID, volumeName)
+		} else {
+			glog.Infof("Skipping PeerpodVolume creation since 'peerpod' parameter is not found in CreateVolumeRequest")
 		}
 	}); e != nil {
 		return nil, e
@@ -144,6 +146,7 @@ func (s *ControllerService) ControllerPublishVolume(ctx context.Context, req *cs
 			}); e != nil {
 				return nil, e
 			}
+			return res, err
 		}
 		glog.Info("PeerPod parameter found in ControllerPublishVolumeRequest. Creating a new PeerpodVolume object")
 
