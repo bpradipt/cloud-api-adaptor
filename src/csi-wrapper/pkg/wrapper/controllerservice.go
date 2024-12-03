@@ -387,37 +387,57 @@ func (s *ControllerService) SyncHandler(peerPodVolume *peerpodvolumeV1alpha1.Pee
 			modifiedRequest.NodeId = vsiID
 			glog.Infof("The modified ControllerPublishVolumeRequest is :%v", modifiedRequest)
 			ctx := context.Background()
-			// TODO: error check
-			_ = s.redirect(ctx, modifiedRequest, func(ctx context.Context, client csi.ControllerClient) {
-				response, err := client.ControllerPublishVolume(ctx, &modifiedRequest)
-				if err != nil {
-					glog.Errorf("Failed to reproduce ControllerPublishVolume with modified ControllerPublishVolumeRequest, err: %v", err.Error())
-				} else {
-					glog.Infof("The ControllerPublishVolumeResponse for peer pod is :%v", response)
-					var resBuf bytes.Buffer
-					if err := (&jsonpb.Marshaler{}).Marshal(&resBuf, response); err != nil {
-						glog.Error(err, "Error happens while Marshal ControllerPublishVolumeResponse")
-					}
-					resJsonString := resBuf.String()
-					glog.Infof("ControllerPublishVolumeResponse for peer pod JSON string: %s\n", resJsonString)
-					peerPodVolume.Spec.WrapperControllerPublishVolumeRes = resJsonString
-					devicePath := response.PublishContext["device-path"]
-					glog.Infof("device-path for peer pod VM: %s\n", devicePath)
-					peerPodVolume.Spec.DevicePath = devicePath
-					updatedPeerPodVolume, err := s.PeerpodvolumeClient.ConfidentialcontainersV1alpha1().PeerpodVolumes(s.Namespace).Update(context.Background(), peerPodVolume, metav1.UpdateOptions{})
+
+			count := 0
+			reproduced := false
+			for {
+				glog.Infof("start to Reproducing ControllerPublishVolume for peer pod (retrying... %d/%d)", count, 25)
+
+				// TODO: error check
+				_ = s.redirect(ctx, modifiedRequest, func(ctx context.Context, client csi.ControllerClient) {
+					response, err := client.ControllerPublishVolume(ctx, &modifiedRequest)
 					if err != nil {
-						glog.Errorf("Error happens while Update PeerpodVolume with ControllerPublishVolumeResponse for peer pod, err: %v", err.Error())
-						return
+						glog.Errorf("Failed to reproduce ControllerPublishVolume with modified ControllerPublishVolumeRequest, err: %v", err.Error())
+					} else {
+						glog.Infof("The ControllerPublishVolumeResponse for peer pod is :%v", response)
+						var resBuf bytes.Buffer
+						if err := (&jsonpb.Marshaler{}).Marshal(&resBuf, response); err != nil {
+							glog.Error(err, "Error happens while Marshal ControllerPublishVolumeResponse")
+							return
+						}
+						resJsonString := resBuf.String()
+						glog.Infof("ControllerPublishVolumeResponse for peer pod JSON string: %s\n", resJsonString)
+						peerPodVolume.Spec.WrapperControllerPublishVolumeRes = resJsonString
+						devicePath := response.PublishContext["device-path"]
+						glog.Infof("device-path for peer pod VM: %s\n", devicePath)
+						peerPodVolume.Spec.DevicePath = devicePath
+						updatedPeerPodVolume, err := s.PeerpodvolumeClient.ConfidentialcontainersV1alpha1().PeerpodVolumes(s.Namespace).Update(context.Background(), peerPodVolume, metav1.UpdateOptions{})
+						if err != nil {
+							glog.Errorf("Error happens while Update PeerpodVolume with ControllerPublishVolumeResponse for peer pod, err: %v", err.Error())
+							return
+						}
+						updatedPeerPodVolume.Status = v1alpha1.PeerpodVolumeStatus{
+							State: v1alpha1.ControllerPublishVolumeApplied,
+						}
+						_, err = s.PeerpodvolumeClient.ConfidentialcontainersV1alpha1().PeerpodVolumes(s.Namespace).UpdateStatus(context.Background(), updatedPeerPodVolume, metav1.UpdateOptions{})
+						if err != nil {
+							glog.Errorf("Error happens while Update PeerpodVolume status to ControllerPublishVolumeApplied, err: %v", err.Error())
+						} else {
+							reproduced = true
+						}
 					}
-					updatedPeerPodVolume.Status = v1alpha1.PeerpodVolumeStatus{
-						State: v1alpha1.ControllerPublishVolumeApplied,
-					}
-					_, err = s.PeerpodvolumeClient.ConfidentialcontainersV1alpha1().PeerpodVolumes(s.Namespace).UpdateStatus(context.Background(), updatedPeerPodVolume, metav1.UpdateOptions{})
-					if err != nil {
-						glog.Errorf("Error happens while Update PeerpodVolume status to ControllerPublishVolumeApplied, err: %v", err.Error())
-					}
+				})
+				if count == 25 {
+					glog.Error("reaches max retry count. gave up Reproducing ControllerPublishVolume for peer pod")
+					break
 				}
-			})
+				if reproduced {
+					glog.Infof("Reproduced ControllerPublishVolume for peer pod successfully")
+					break
+				}
+				glog.Infof("failed to Reproducing ControllerPublishVolume for peer pod (retrying... %d/%d)", count, 25)
+				count++
+			}
 		}
 	}
 }
