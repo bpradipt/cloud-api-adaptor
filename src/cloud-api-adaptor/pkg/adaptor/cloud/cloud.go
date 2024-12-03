@@ -505,5 +505,7 @@ func (s *cloudService) StopVM(ctx context.Context, req *pb.StopVMRequest) (*pb.S
 		logger.Printf("removing sandbox %s: %v", sid, err)
 	}
 
+	logger.Printf("stopped and removed sandbox %s", sid)
+
 	return &pb.StopVMResponse{}, nil
 }
