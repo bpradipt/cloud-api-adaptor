@@ -489,6 +489,11 @@ func (s *cloudService) StopVM(ctx context.Context, req *pb.StopVMRequest) (*pb.S
 		sandbox.sshClientInst.DisconnectPP(string(sid))
 	}
 
+	// Remove the sandbox from the map earlier to avoid stale returns to GetInstanceID requests
+	if err = s.removeSandbox(sid); err != nil {
+		logger.Printf("removing sandbox %s: %v", sid, err)
+	}
+
 	if err := s.provider.DeleteInstance(ctx, sandbox.instanceID); err != nil {
 		logger.Printf("Error deleting an instance %s: %v", sandbox.instanceID, err)
 	} else if s.ppService != nil {
@@ -499,10 +504,6 @@ func (s *cloudService) StopVM(ctx context.Context, req *pb.StopVMRequest) (*pb.S
 
 	if err := s.workerNode.Teardown(sandbox.netNSPath, sandbox.podNetwork); err != nil {
 		logger.Printf("tearing down netns %s: %v", sandbox.netNSPath, err)
-	}
-
-	if err = s.removeSandbox(sid); err != nil {
-		logger.Printf("removing sandbox %s: %v", sid, err)
 	}
 
 	return &pb.StopVMResponse{}, nil
