@@ -11,7 +11,7 @@ if [ -e /tmp/files/etc/aa-offline_fs_kbc-resources.json ]; then
 fi
 
 if [ -e /tmp/files/etc/certificates/tls.crt ] && [ -e /tmp/files/etc/certificates/tls.key ]; then
-        sudo mkdir -p /etc/certificates
+	sudo mkdir -p /etc/certificates
 	sudo cp -a /tmp/files/etc/certificates/tls.crt /etc/certificates/
 	sudo cp -a /tmp/files/etc/certificates/tls.key /etc/certificates/
 fi
@@ -30,3 +30,4 @@ sudo cp -a /tmp/files/pause_bundle /
 sudo mkdir -p /etc/kata-opa
 sudo cp -a /tmp/files/etc/kata-opa/* /etc/kata-opa/
 sudo cp -a /tmp/files/etc/tmpfiles.d/policy.conf /etc/tmpfiles.d/
+sudo cp -a /tmp/files/etc/tmpfiles.d/media.conf /etc/tmpfiles.d/
