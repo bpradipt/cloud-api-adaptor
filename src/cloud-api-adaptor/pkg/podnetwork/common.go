@@ -49,16 +49,17 @@ func extractInterfaceNumber(iface string) (prefix string, num int) {
 
 // findPrimaryInterface identifies the primary interface on the given network namespace.
 // An interface is considered to be primary if it is attached to the default route.
-func findPrimaryInterface(ns netops.Namespace) (string, error) {
-	routes, err := ns.RouteList(&netops.Route{Destination: netops.DefaultPrefix})
-	if err != nil {
-		return "", fmt.Errorf("failed to get routes on namespace %q: %w", ns.Path(), err)
-	}
-
+func findPrimaryInterface(ns netops.Namespace) (string, netip.Addr, error) {
 	var primaryDev string
 	var primaryPrefix string
 	var primaryNum = math.MaxInt
 	var priority = math.MaxInt
+	var gw netip.Addr
+
+	routes, err := ns.RouteList(&netops.Route{Destination: netops.DefaultPrefix})
+	if err != nil {
+		return "", gw, fmt.Errorf("failed to get routes on namespace %q: %w", ns.Path(), err)
+	}
 
 	for _, r := range routes {
 		// Default route check
@@ -74,17 +75,18 @@ func findPrimaryInterface(ns netops.Namespace) (string, error) {
 				primaryDev = dev
 				primaryPrefix = devPrefix
 				primaryNum = devNum
+				gw = r.Gateway
 			}
 		}
 	}
 
 	if primaryDev == "" {
-		return "", fmt.Errorf("failed to identify primary interface on network namespace %q", ns.Path())
+		return "", gw, fmt.Errorf("failed to identify primary interface on network namespace %q", ns.Path())
 	}
 
-	logger.Printf("Primary interface: %s", primaryDev)
+	logger.Printf("Primary interface: %s, Gateway address: %s", primaryDev, gw.String())
 
-	return primaryDev, nil
+	return primaryDev, gw, nil
 }
 
 func setupExternalNetwork(hostNS netops.Namespace, hostPrimaryInterface string, podNS netops.Namespace) error {
@@ -220,7 +222,7 @@ func isInterfaceFilteredOut(ifName string) bool {
 // Function to move the network interface to a different network namespace
 // Also set the default route and address for the interface in the new namespace
 
-func moveInterfaceToNamespace(srcNs, dstNs netops.Namespace, iface string, addrCIDR netip.Prefix, route *netops.Route) error {
+func moveInterfaceToNamespace(srcNs, dstNs netops.Namespace, iface string, addrCIDR netip.Prefix, defRoute *netops.Route) error {
 
 	// Get the network interface object
 	link, err := srcNs.LinkFind(iface)
@@ -261,9 +263,9 @@ func moveInterfaceToNamespace(srcNs, dstNs netops.Namespace, iface string, addrC
 	}
 
 	// Set the default route for the network interface in the new namespace
-	err = dstNs.RouteAdd(route)
+	err = dstNs.RouteAdd(defRoute)
 	if err != nil {
-		return fmt.Errorf("failed to set route %v for link %q: %w", route, iface, err)
+		return fmt.Errorf("failed to set route %v for link %q: %w", defRoute, iface, err)
 	}
 
 	return nil
