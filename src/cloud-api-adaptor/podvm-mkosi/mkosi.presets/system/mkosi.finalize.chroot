@@ -14,6 +14,9 @@ if [[ "${ARCHITECTURE}" == "s390x" ]]; then
 fi
 
 # Conditional SFTP support: enable process-user-data.path only if ENABLE_SFTP is set
+
+ENABLE_SFTP=${ENABLE_SFTP:-false}
+
 if [[ "${ENABLE_SFTP}" == "true" ]]; then
 	echo "Enabling SFTP user-data processing service (ENABLE_SFTP=true)"
 	systemctl enable process-user-data.path
