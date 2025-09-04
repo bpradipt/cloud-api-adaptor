@@ -14,6 +14,17 @@ rules:
   - secrets
   verbs:
   - get
+# BYOM provider needs access to its IP pool state ConfigMap
+- apiGroups:
+  - ""
+  resourceNames:
+  - byom-ip-pool-state
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - confidentialcontainers.org
   resources:
