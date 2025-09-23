@@ -9,10 +9,12 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/netip"
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -127,6 +129,27 @@ func (cm *ConfigMapVMPoolManager) selectIPIndex(availableIPs []string, allocatio
 	return selectedIndex
 }
 
+// checkVMReadiness verifies that a VM is ready by checking network connectivity
+func (cm *ConfigMapVMPoolManager) checkVMReadiness(ctx context.Context, ipStr string) error {
+	logger.Printf("Checking VM readiness for IP %s", ipStr)
+
+	// Use retry package for consistent retry behavior
+	return retry.OnError(retry.DefaultBackoff, func(err error) bool {
+		// Retry on any connection error
+		return true
+	}, func() error {
+		// Create a connection with timeout to check if VM is responding
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(ipStr, "22"), 2*time.Second)
+		if err != nil {
+			logger.Printf("VM %s not ready: %v", ipStr, err)
+			return err
+		}
+		conn.Close()
+		logger.Printf("VM %s is ready", ipStr)
+		return nil
+	})
+}
+
 // AllocateIP allocates an IP from the global pool
 func (cm *ConfigMapVMPoolManager) AllocateIP(ctx context.Context, allocationID string, podName, podNamespace string) (netip.Addr, error) {
 	ctx, cancel := context.WithTimeout(ctx, cm.config.OperationTimeout)
@@ -156,7 +179,7 @@ func (cm *ConfigMapVMPoolManager) doAllocateIP(ctx context.Context, allocationID
 		return netip.Addr{}, fmt.Errorf("%w: %w", ErrRetrievingPoolState, err)
 	}
 
-	// Check if already allocated (idempotent operation)
+	// Check if already allocated
 	if allocation, exists := state.AllocatedIPs[allocationID]; exists {
 		ip, parseErr := netip.ParseAddr(allocation.IP)
 		if parseErr != nil {
@@ -171,11 +194,17 @@ func (cm *ConfigMapVMPoolManager) doAllocateIP(ctx context.Context, allocationID
 		return netip.Addr{}, ErrNoAvailableIPs
 	}
 
-	// Smart IP selection: use hash-based distribution to reduce conflicts
+	// IP selection: use hash-based distribution to reduce conflicts
 	selectedIndex := cm.selectIPIndex(state.AvailableIPs, allocationID)
 	ipStr := state.AvailableIPs[selectedIndex]
 	logger.Printf("Selected IP %s (index %d of %d) for allocation %s",
 		ipStr, selectedIndex, len(state.AvailableIPs), allocationID)
+
+	// Verify VM is ready before committing to allocation
+	if err := cm.checkVMReadiness(ctx, ipStr); err != nil {
+		logger.Printf("VM %s failed readiness check. Can't be allocated: %v", ipStr, err)
+		return netip.Addr{}, fmt.Errorf("%w: %s: %w", ErrInvalidAllocatedIP, ipStr, err)
+	}
 
 	// Remove selected IP from available pool
 	state.AvailableIPs = append(
@@ -206,13 +235,15 @@ func (cm *ConfigMapVMPoolManager) doAllocateIP(ctx context.Context, allocationID
 		return netip.Addr{}, fmt.Errorf("%w: %w", ErrConflict, err)
 	}
 
+	// Convert to netip.Addr before returning
 	ip, err := netip.ParseAddr(ipStr)
 	if err != nil {
 		return netip.Addr{}, fmt.Errorf("%w: %s: %w", ErrInvalidAllocatedIP, ipStr, err)
 	}
 
 	logger.Printf("Successfully allocated IP %s to allocation %s on node %s",
-		ipStr, allocationID, nodeName)
+		ip.String(), allocationID, nodeName)
+
 	return ip, nil
 }
 
@@ -411,6 +442,8 @@ func (cm *ConfigMapVMPoolManager) updateState(ctx context.Context, state *IPAllo
 			_, createErr := cm.client.CoreV1().ConfigMaps(cm.config.Namespace).Create(ctx, newConfigMap, metav1.CreateOptions{})
 			if createErr == nil {
 				logger.Printf("Created new ConfigMap %s with initial state", cm.config.ConfigMapName)
+			} else {
+				logger.Printf("Failed to create ConfigMap %s: %v", cm.config.ConfigMapName, createErr)
 			}
 			// If creation fails with "already exists", the retry loop will handle it.
 			return createErr
@@ -434,6 +467,8 @@ func (cm *ConfigMapVMPoolManager) updateState(ctx context.Context, state *IPAllo
 		if updateErr == nil {
 			logger.Printf("Successfully updated ConfigMap %s with new state (version %d)",
 				cm.config.ConfigMapName, state.Version)
+		} else {
+			logger.Printf("Failed to update ConfigMap %s: %v", cm.config.ConfigMapName, updateErr)
 		}
 		return updateErr
 	})

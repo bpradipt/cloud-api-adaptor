@@ -150,7 +150,7 @@ func (p *byomProvider) CreateInstance(ctx context.Context, podName, sandboxID st
 	}
 
 	// Send config to the VM via SFTP
-	if err := p.sendConfigFile(cloudConfigData, ip); err != nil {
+	if err := p.sendConfigFile(ctx, cloudConfigData, ip); err != nil {
 		// Rollback allocation on error
 		if rollbackErr := p.globalPoolMgr.DeallocateIP(ctx, allocationID); rollbackErr != nil {
 			logger.Printf("Warning: failed to rollback IP allocation: %v", rollbackErr)
@@ -186,7 +186,7 @@ func (p *byomProvider) DeleteInstance(ctx context.Context, instanceID string) er
 	}
 
 	// Send reboot trigger file to VM before deallocating
-	if err := p.sendRebootFile(ip); err != nil {
+	if err := p.sendRebootFile(ctx, ip); err != nil {
 		logger.Printf("Warning: failed to send reboot file to VM %s: %v", ip.String(), err)
 		// Continue with deallocation even if reboot file sending fails
 	}
@@ -233,29 +233,36 @@ func (p *byomProvider) createSSHConfig() (*ssh.ClientConfig, error) {
 }
 
 // sendConfigFile sends cloud-init user-data to a VM via SFTP
-func (p *byomProvider) sendConfigFile(userData string, ip netip.Addr) error {
+func (p *byomProvider) sendConfigFile(ctx context.Context, userData string, ip netip.Addr) error {
+	logger.Printf("Attempting to send user-data to VM %s (size: %d bytes)", ip.String(), len(userData))
+
 	sshConfig, err := p.createSSHConfig()
 	if err != nil {
 		return fmt.Errorf("failed to create SSH config: %w", err)
 	}
 
 	address := net.JoinHostPort(ip.String(), sshPort)
-	if err := p.sendFileViaSFTPWithChroot(address, sshConfig, userDataFile, []byte(userData)); err != nil {
+	if err := p.sendFileViaSFTPWithChroot(ctx, address, sshConfig, userDataFile, []byte(userData)); err != nil {
+		logger.Printf("Failed to send user-data to VM %s: %v", ip.String(), err)
 		return fmt.Errorf("failed to send user-data to VM %s: %w", ip.String(), err)
 	}
 
+	logger.Printf("Successfully sent user-data to VM %s", ip.String())
 	return nil
 }
 
 // sendRebootFile sends a reboot trigger file to a VM via SFTP
-func (p *byomProvider) sendRebootFile(ip netip.Addr) error {
+func (p *byomProvider) sendRebootFile(ctx context.Context, ip netip.Addr) error {
+
+	logger.Printf("Sending reboot file to VM %s", ip.String())
+
 	sshConfig, err := p.createSSHConfig()
 	if err != nil {
 		return fmt.Errorf("failed to create SSH config: %w", err)
 	}
 
 	address := net.JoinHostPort(ip.String(), sshPort)
-	if err := p.sendFileViaSFTPWithChroot(address, sshConfig, rebootFile, []byte("reboot")); err != nil {
+	if err := p.sendFileViaSFTPWithChroot(ctx, address, sshConfig, rebootFile, []byte("reboot")); err != nil {
 		return fmt.Errorf("failed to send reboot file to VM %s: %w", ip.String(), err)
 	}
 
@@ -263,9 +270,9 @@ func (p *byomProvider) sendRebootFile(ip netip.Addr) error {
 }
 
 // sendFileViaSFTPWithChroot sends a file via SFTP, adjusting path for chrooted environment
-func (p *byomProvider) sendFileViaSFTPWithChroot(address string, sshConfig *ssh.ClientConfig, remotePath string, content []byte) error {
+func (p *byomProvider) sendFileViaSFTPWithChroot(ctx context.Context, address string, sshConfig *ssh.ClientConfig, remotePath string, content []byte) error {
 	// Strip /media prefix for chrooted SFTP (SFTP server chroots to /media)
 	// SFTP path is hardcoded to /media/cidata
 	adjustedPath := strings.TrimPrefix(remotePath, "/media/")
-	return util.SendFileViaSFTP(address, sshConfig, adjustedPath, content)
+	return util.SendFileViaSFTPWithContext(ctx, address, sshConfig, adjustedPath, content)
 }

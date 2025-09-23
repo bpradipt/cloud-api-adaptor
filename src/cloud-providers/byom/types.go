@@ -107,7 +107,7 @@ type GlobalVMPoolManager interface {
 	GetPoolStatus(ctx context.Context) (total, available, inUse int, err error)
 
 	// RecoverState initializes state from persistent storage
-	RecoverState(ctx context.Context, vmCleanupFunc func(netip.Addr) error) error
+	RecoverState(ctx context.Context, vmCleanupFunc func(context.Context, netip.Addr) error) error
 
 	// ListAllocatedIPs returns all currently allocated IPs
 	ListAllocatedIPs(ctx context.Context) (map[string]IPAllocation, error)

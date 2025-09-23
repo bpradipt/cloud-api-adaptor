@@ -4,6 +4,7 @@
 package util
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"log"
@@ -333,15 +334,32 @@ func createStatelessTOFUCallback() ssh.HostKeyCallback {
 
 // SendFileViaSFTP sends file content to a remote path via SFTP
 func SendFileViaSFTP(address string, sshConfig *ssh.ClientConfig, remotePath string, content []byte) error {
-	// Connect to the remote host
-	conn, err := ssh.Dial("tcp", address, sshConfig)
+	return SendFileViaSFTPWithContext(context.Background(), address, sshConfig, remotePath, content)
+}
+
+// SendFileViaSFTPWithContext sends file content to a remote path via SFTP with context support
+func SendFileViaSFTPWithContext(ctx context.Context, address string, sshConfig *ssh.ClientConfig, remotePath string, content []byte) error {
+	// Create a context-aware dialer
+	dialer := &net.Dialer{}
+	conn, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
 		return fmt.Errorf("failed to connect to %s: %w", address, err)
 	}
 	defer conn.Close()
 
+	// Create SSH connection using the established connection
+	sshConn, chans, reqs, err := ssh.NewClientConn(conn, address, sshConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create SSH connection: %w", err)
+	}
+	defer sshConn.Close()
+
+	// Create SSH client
+	client := ssh.NewClient(sshConn, chans, reqs)
+	defer client.Close()
+
 	// Create SFTP client
-	sftpClient, err := sftp.NewClient(conn)
+	sftpClient, err := sftp.NewClient(client)
 	if err != nil {
 		return fmt.Errorf("failed to create SFTP client: %w", err)
 	}

@@ -6,18 +6,21 @@ package byom
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/netip"
-	"reflect"
-	"sort"
+	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // RecoverState initializes state from persistent storage
 // Primary: ConfigMap with node-specific cleanup, Fallback: Initialize empty state
-func (cm *ConfigMapVMPoolManager) RecoverState(ctx context.Context, vmCleanupFunc func(netip.Addr) error) error {
+func (cm *ConfigMapVMPoolManager) RecoverState(ctx context.Context, vmCleanupFunc func(context.Context, netip.Addr) error) error {
+	// Lock the entire recovery process to prevent concurrent allocation interference
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+
 	logger.Printf("Starting state recovery for VM pool...")
 
 	// Get current node name
@@ -35,19 +38,12 @@ func (cm *ConfigMapVMPoolManager) RecoverState(ctx context.Context, vmCleanupFun
 		logger.Printf("State recovered from ConfigMap: %d total IPs, %d allocated, %d available",
 			total, len(state.AllocatedIPs), len(state.AvailableIPs))
 
-		// Release allocations for current node (they're now invalid due to CAA restart)
-		if err := cm.releaseNodeAllocations(ctx, state, currentNode, vmCleanupFunc); err != nil {
-			logger.Printf("Warning: failed to release node allocations: %v", err)
-			// Continue with validation even if release fails
+		// Release node allocations and repair state in single atomic operation
+		if err := cm.releaseNodeAllocationsAndRepairState(ctx, state, currentNode, vmCleanupFunc); err != nil {
+			logger.Printf("Warning: failed to release node allocations and repair state: %v", err)
 		}
 
-		// Re-fetch state after potential node cleanup
-		state, _, err = cm.getCurrentState(ctx)
-		if err != nil {
-			logger.Printf("Warning: failed to re-fetch state after node cleanup: %v", err)
-		}
-
-		return cm.validateAndRepairState(ctx, state)
+		return nil
 	}
 
 	// ConfigMap doesn't exist or is corrupted, initialize empty state
@@ -55,168 +51,129 @@ func (cm *ConfigMapVMPoolManager) RecoverState(ctx context.Context, vmCleanupFun
 	return cm.initializeAndSaveEmptyState(ctx)
 }
 
-// validateAndRepairState validates the recovered state and repairs inconsistencies
-func (cm *ConfigMapVMPoolManager) validateAndRepairState(ctx context.Context, state *IPAllocationState) error {
-	// 1. Start with a complete set of all configured IPs. This is our source of truth.
-	configuredIPs := make(map[string]struct{})
-	for _, ip := range cm.config.PoolIPs {
-		// We only add valid IPs from config to prevent bad config from polluting the state.
-		if _, err := netip.ParseAddr(ip); err == nil {
-			configuredIPs[ip] = struct{}{}
-		} else {
-			log.Printf("Warning: Invalid IP address in configuration, skipping: %s", ip)
-		}
-	}
+// releaseNodeAllocationsAndRepairState releases node allocations with VM cleanup and repairs state to match primary config
+// Final AvailableIPs = config.PoolIPs - (other nodes' allocated IPs) - (current node IPs that failed cleanup)
+func (cm *ConfigMapVMPoolManager) releaseNodeAllocationsAndRepairState(ctx context.Context, state *IPAllocationState, nodeName string, vmCleanupFunc func(context.Context, netip.Addr) error) error {
+	allocationsToProcess := make(map[string]IPAllocation)
+	finalAllocatedIPs := make(map[string]IPAllocation)
 
-	// 2. Build the new, valid "allocated" map by filtering the current state.
-	// Any IP not in our configured set is automatically removed.
-	repairedAllocatedIPs := make(map[string]IPAllocation)
-	for allocID, allocation := range state.AllocatedIPs {
-		if _, exists := configuredIPs[allocation.IP]; exists {
-			repairedAllocatedIPs[allocID] = allocation
-			// Remove from the set; what's left will become the available pool.
-			delete(configuredIPs, allocation.IP)
-		} else {
-			log.Printf("Warning: Allocated IP %s is not in the configured pool; removing.", allocation.IP)
-		}
-	}
-
-	// 3. Whatever remains in the configuredIPs set is the new available pool.
-	repairedAvailableIPs := make([]string, 0, len(configuredIPs))
-	for ip := range configuredIPs {
-		repairedAvailableIPs = append(repairedAvailableIPs, ip)
-	}
-	// Sort for consistent ordering, which is crucial for comparison and determinism.
-	sort.Strings(repairedAvailableIPs)
-
-	// 4. Use reflect.DeepEqual for robust, idiomatic change detection.
-	// We must also sort the original available IPs to ensure a fair comparison.
-	sortedOriginalAvailableIPs := make([]string, len(state.AvailableIPs))
-	copy(sortedOriginalAvailableIPs, state.AvailableIPs)
-	sort.Strings(sortedOriginalAvailableIPs)
-
-	if reflect.DeepEqual(repairedAllocatedIPs, state.AllocatedIPs) &&
-		reflect.DeepEqual(repairedAvailableIPs, sortedOriginalAvailableIPs) {
-		log.Printf("State validation completed successfully, no changes needed.")
-		return nil
-	}
-
-	// 5. If changes were detected, build and persist the new state.
-	log.Printf("State repairs made: allocated %d->%d, available %d->%d",
-		len(state.AllocatedIPs), len(repairedAllocatedIPs),
-		len(state.AvailableIPs), len(repairedAvailableIPs))
-
-	repairedState := &IPAllocationState{
-		AllocatedIPs: repairedAllocatedIPs,
-		AvailableIPs: repairedAvailableIPs,
-		LastUpdated:  metav1.Now(),
-		Version:      state.Version + 1,
-	}
-
-	return cm.updateState(ctx, repairedState)
-}
-
-// releaseNodeAllocations releases all IP allocations for a specific node with VM cleanup support
-func (cm *ConfigMapVMPoolManager) releaseNodeAllocations(ctx context.Context, state *IPAllocationState, nodeName string, vmCleanupFunc func(netip.Addr) error) error {
-	nodeAllocations := []string{}
-	cleanedAllocations := make(map[string]IPAllocation)
-	vmCleanupResults := make(map[string]error) // Track cleanup success/failure
-
-	// Separate current node's allocations from others
+	// 1. Separate current node allocations from other nodes
 	for allocID, allocation := range state.AllocatedIPs {
 		if allocation.NodeName == nodeName {
-			// This IP was allocated on the restarting node - release it
-			nodeAllocations = append(nodeAllocations, allocation.IP)
-			logger.Printf("Found IP %s to release from node %s (pod %s/%s)",
-				allocation.IP, nodeName, allocation.PodNamespace, allocation.PodName)
+			allocationsToProcess[allocation.IP] = allocation
 		} else {
-			// Keep allocations from other nodes
-			cleanedAllocations[allocID] = allocation
+			finalAllocatedIPs[allocID] = allocation // Keep allocations from other nodes
 		}
 	}
 
-	if len(nodeAllocations) == 0 {
+	if len(allocationsToProcess) == 0 {
 		logger.Printf("No IP allocations found for node %s", nodeName)
-		return nil
-	}
+	} else {
+		logger.Printf("Found %d IPs to process from node %s", len(allocationsToProcess), nodeName)
 
-	// Send reboot files to all VMs FIRST (critical for VM state consistency)
-	if vmCleanupFunc != nil {
-		logger.Printf("Sending reboot files to %d VMs before releasing IPs", len(nodeAllocations))
+		// 2. Perform VM cleanup concurrently
+		var cleanupResults sync.Map // Store cleanup errors
+		if vmCleanupFunc != nil {
+			g, gCtx := errgroup.WithContext(ctx)
 
-		for _, ipStr := range nodeAllocations {
-			if ip, err := netip.ParseAddr(ipStr); err == nil {
-				cleanupErr := vmCleanupFunc(ip)
-				vmCleanupResults[ipStr] = cleanupErr
+			for ipStr := range allocationsToProcess {
+				ipStr := ipStr // Capture loop variable for the goroutine
+				g.Go(func() error {
+					ip, err := netip.ParseAddr(ipStr)
+					if err != nil {
+						return fmt.Errorf("invalid IP in allocation state: %s", ipStr)
+					}
 
-				if cleanupErr != nil {
-					logger.Printf("Warning: failed to send reboot file to VM %s: %v", ip.String(), cleanupErr)
-				} else {
-					logger.Printf("Successfully sent reboot file to VM %s", ip.String())
-				}
+					logger.Printf("Sending reboot file to VM %s", ip.String())
+					if cleanupErr := vmCleanupFunc(gCtx, ip); cleanupErr != nil {
+						logger.Printf("Warning: failed to send reboot file to VM %s: %v", ip.String(), cleanupErr)
+						cleanupResults.Store(ipStr, cleanupErr)
+					}
+					return nil // Don't fail the whole group for one failed cleanup
+				})
+			}
+
+			// Wait for all cleanup goroutines to finish
+			if err := g.Wait(); err != nil {
+				return fmt.Errorf("error during concurrent cleanup: %w", err)
+			}
+
+			// Wait for VMs to process reboot files
+			waitDuration := 15 * time.Second // TODO: Make configurable
+			logger.Printf("Waiting %v for VMs to process reboot files", waitDuration)
+			select {
+			case <-time.After(waitDuration):
+			case <-ctx.Done():
+				return fmt.Errorf("context cancelled during VM cleanup wait: %w", ctx.Err())
 			}
 		}
 
-		// Wait for VMs to process reboot (allow VM state to settle)
-		waitDuration := 15 * time.Second // TODO: Make this configurable via byom config
-		logger.Printf("Waiting %v for VMs to process reboot files", waitDuration)
-
-		select {
-		case <-time.After(waitDuration):
-			// Continue after wait
-		case <-ctx.Done():
-			return fmt.Errorf("context cancelled during VM cleanup wait: %w", ctx.Err())
+		// 3. Keep current node IPs as allocated if cleanup failed
+		successfullyCleanedCount := 0
+		for ip, allocation := range allocationsToProcess {
+			if _, failed := cleanupResults.Load(ip); failed {
+				// Cleanup failed, keep IP as allocated to prevent reuse of dirty VM
+				for id, alloc := range state.AllocatedIPs {
+					if alloc.IP == ip {
+						finalAllocatedIPs[id] = allocation
+						break
+					}
+				}
+				logger.Printf("Keeping IP %s allocated for node %s due to failed cleanup", ip, nodeName)
+			} else {
+				// Cleanup succeeded, IP will become available
+				successfullyCleanedCount++
+				logger.Printf("Successfully cleaned IP %s from node %s", ip, nodeName)
+			}
 		}
+
+		logger.Printf("Released %d IPs, kept %d IPs allocated due to cleanup failures for node %s",
+			successfullyCleanedCount, len(allocationsToProcess)-successfullyCleanedCount, nodeName)
 	}
 
-	// Only release IPs for VMs that successfully received reboot files
-	successfullyCleanedIPs := []string{}
-	failedCleanupIPs := []string{}
+	// 4. Repair state to match primary configuration: AvailableIPs = config.PoolIPs - finalAllocatedIPs
+	primaryIPSet := make(map[string]bool)
+	for _, ip := range cm.config.PoolIPs {
+		primaryIPSet[ip] = true
+	}
 
-	for _, ipStr := range nodeAllocations {
-		if vmCleanupFunc == nil {
-			// If no cleanup function provided, release all IPs (backward compatibility)
-			successfullyCleanedIPs = append(successfullyCleanedIPs, ipStr)
-		} else if cleanupErr := vmCleanupResults[ipStr]; cleanupErr != nil {
-			failedCleanupIPs = append(failedCleanupIPs, ipStr)
-			logger.Printf("NOT releasing IP %s due to failed VM cleanup: %v", ipStr, cleanupErr)
+	// Filter out any allocated IPs not in primary configuration
+	validAllocatedIPs := make(map[string]IPAllocation)
+	allocatedIPSet := make(map[string]bool)
+	for allocID, allocation := range finalAllocatedIPs {
+		if primaryIPSet[allocation.IP] {
+			validAllocatedIPs[allocID] = allocation
+			allocatedIPSet[allocation.IP] = true
 		} else {
-			successfullyCleanedIPs = append(successfullyCleanedIPs, ipStr)
+			logger.Printf("Warning: removing allocated IP %s not in primary configuration", allocation.IP)
 		}
 	}
 
-	// Update state - only release successfully cleaned IPs
-	updatedAvailable := append(state.AvailableIPs, successfullyCleanedIPs...)
-
-	// Keep failed cleanup IPs as allocated to prevent reuse
-	for allocID, allocation := range state.AllocatedIPs {
-		if allocation.NodeName == nodeName {
-			found := false
-			for _, failedIP := range failedCleanupIPs {
-				if allocation.IP == failedIP {
-					cleanedAllocations[allocID] = allocation // Keep as allocated
-					found = true
-					break
-				}
-			}
-			if !found {
-				// This IP was successfully cleaned, so it's being released
-				logger.Printf("Releasing IP %s from node %s", allocation.IP, nodeName)
-			}
+	// Build AvailableIPs = primary config - allocated IPs
+	availableIPs := []string{}
+	for _, ip := range cm.config.PoolIPs {
+		if !allocatedIPSet[ip] {
+			availableIPs = append(availableIPs, ip)
 		}
 	}
 
-	newState := &IPAllocationState{
-		AllocatedIPs: cleanedAllocations,
-		AvailableIPs: updatedAvailable,
+	// 5. Single atomic state update
+	finalState := &IPAllocationState{
+		AllocatedIPs: validAllocatedIPs,
+		AvailableIPs: availableIPs,
 		LastUpdated:  metav1.Now(),
 		Version:      state.Version + 1,
 	}
 
-	logger.Printf("Released %d IPs, kept %d IPs allocated due to cleanup failures for node %s",
-		len(successfullyCleanedIPs), len(failedCleanupIPs), nodeName)
+	logger.Printf("Final state: primary config has %d IPs, %d allocated, %d available",
+		len(cm.config.PoolIPs), len(validAllocatedIPs), len(availableIPs))
 
-	return cm.updateState(ctx, newState)
+	if err := cm.updateState(ctx, finalState); err != nil {
+		return fmt.Errorf("failed to update final state: %w", err)
+	}
+
+	logger.Printf("Successfully released node allocations and repaired state to match primary configuration")
+	return nil
 }
 
 // initializeEmptyState creates an empty state with all IPs available
