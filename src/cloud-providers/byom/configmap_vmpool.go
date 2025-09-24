@@ -295,35 +295,8 @@ func (cm *ConfigMapVMPoolManager) doDeallocateIP(ctx context.Context, allocation
 	return nil
 }
 
-// DeallocateByIP returns an IP to the pool by IP address
-func (cm *ConfigMapVMPoolManager) DeallocateByIP(ctx context.Context, ip netip.Addr) error {
-	ctx, cancel := context.WithTimeout(ctx, cm.config.OperationTimeout)
-	defer cancel()
-
-	// Find allocation ID for this IP
-	allocatedIPs, err := cm.ListAllocatedIPs(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to list allocated IPs: %w", err)
-	}
-
-	var allocationID string
-	for id, allocation := range allocatedIPs {
-		if allocation.IP == ip.String() {
-			allocationID = id
-			break
-		}
-	}
-
-	if allocationID == "" {
-		logger.Printf("IP %s not found in allocated pool", ip.String())
-		return nil
-	}
-
-	return cm.DeallocateIP(ctx, allocationID)
-}
-
-// GetAllocatedIP returns the IP allocated to a specific allocation ID
-func (cm *ConfigMapVMPoolManager) GetAllocatedIP(ctx context.Context, allocationID string) (netip.Addr, bool, error) {
+// GetIPfromAllocationID returns the IP allocated to a specific allocation ID
+func (cm *ConfigMapVMPoolManager) GetIPfromAllocationID(ctx context.Context, allocationID string) (netip.Addr, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, cm.config.OperationTimeout)
 	defer cancel()
 
@@ -343,6 +316,26 @@ func (cm *ConfigMapVMPoolManager) GetAllocatedIP(ctx context.Context, allocation
 	}
 
 	return ip, true, nil
+}
+
+// GetAllocationIDfromIP returns the allocation ID for a given IP address
+func (cm *ConfigMapVMPoolManager) GetAllocationIDfromIP(ctx context.Context, ip netip.Addr) (string, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, cm.config.OperationTimeout)
+	defer cancel()
+
+	state, _, err := cm.getCurrentState(ctx)
+	if err != nil {
+		return "", false, fmt.Errorf("%w: %w", ErrRetrievingPoolState, err)
+	}
+
+	ipStr := ip.String()
+	for allocationID, allocation := range state.AllocatedIPs {
+		if allocation.IP == ipStr {
+			return allocationID, true, nil
+		}
+	}
+
+	return "", false, nil
 }
 
 // GetPoolStatus returns current pool statistics

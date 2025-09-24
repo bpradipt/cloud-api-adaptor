@@ -89,7 +89,7 @@ func TestConfigMapVMPoolManagerRecoverState(t *testing.T) {
 	}
 
 	// Verify specific allocation exists
-	allocatedIP, exists, err := manager.GetAllocatedIP(ctx, "test-allocation-1")
+	allocatedIP, exists, err := manager.GetIPfromAllocationID(ctx, "test-allocation-1")
 	if err != nil {
 		t.Errorf("Failed to get allocated IP: %v", err)
 	}
@@ -121,18 +121,18 @@ func TestConfigMapVMPoolManagerRecoverStateWithNodeAllocations(t *testing.T) {
 	existingState := &IPAllocationState{
 		AllocatedIPs: map[string]IPAllocation{
 			"other-node-allocation": {
-				AllocationID:  "other-node-allocation",
-				IP:            "192.168.1.10",
-				NodeName:      "other-node",
-				PodName:       "other-pod",
-				AllocatedAt:   metav1.Now(),
+				AllocationID: "other-node-allocation",
+				IP:           "192.168.1.10",
+				NodeName:     "other-node",
+				PodName:      "other-pod",
+				AllocatedAt:  metav1.Now(),
 			},
 			"test-node-allocation": {
-				AllocationID:  "test-node-allocation",
-				IP:            "192.168.1.11",
-				NodeName:      "test-node", // This should be kept (not released during recovery)
-				PodName:       "test-pod",
-				AllocatedAt:   metav1.Now(),
+				AllocationID: "test-node-allocation",
+				IP:           "192.168.1.11",
+				NodeName:     "test-node", // This should be kept (not released during recovery)
+				PodName:      "test-pod",
+				AllocatedAt:  metav1.Now(),
 			},
 		},
 		AvailableIPs: []string{"192.168.1.12"},
@@ -199,7 +199,7 @@ func TestConfigMapVMPoolManagerRecoverStateWithNodeAllocations(t *testing.T) {
 	}
 
 	// Verify allocations are preserved during recovery
-	_, exists, err := manager.GetAllocatedIP(ctx, "test-node-allocation")
+	_, exists, err := manager.GetIPfromAllocationID(ctx, "test-node-allocation")
 	if err != nil {
 		t.Errorf("Failed to check test-node allocation: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestConfigMapVMPoolManagerRecoverStateWithNodeAllocations(t *testing.T) {
 		t.Error("Expected test-node allocation to be preserved")
 	}
 
-	_, exists, err = manager.GetAllocatedIP(ctx, "other-node-allocation")
+	_, exists, err = manager.GetIPfromAllocationID(ctx, "other-node-allocation")
 	if err != nil {
 		t.Errorf("Failed to check other-node allocation: %v", err)
 	}
@@ -234,11 +234,11 @@ func TestConfigMapVMPoolManagerRecoverStateKeepsOrphanedAllocations(t *testing.T
 	existingState := &IPAllocationState{
 		AllocatedIPs: map[string]IPAllocation{
 			"test-node-allocation": {
-				AllocationID:  "test-node-allocation",
-				IP:            "192.168.1.10",
-				NodeName:      "test-node",
-				PodName:       "test-pod",
-				AllocatedAt:   metav1.Now(),
+				AllocationID: "test-node-allocation",
+				IP:           "192.168.1.10",
+				NodeName:     "test-node",
+				PodName:      "test-pod",
+				AllocatedAt:  metav1.Now(),
 			},
 		},
 		AvailableIPs: []string{"192.168.1.11", "192.168.1.12"},
@@ -300,7 +300,7 @@ func TestConfigMapVMPoolManagerRecoverStateKeepsOrphanedAllocations(t *testing.T
 	}
 
 	// Verify allocation is preserved
-	_, exists, err := manager.GetAllocatedIP(ctx, "test-node-allocation")
+	_, exists, err := manager.GetIPfromAllocationID(ctx, "test-node-allocation")
 	if err != nil {
 		t.Errorf("Failed to check allocation: %v", err)
 	}
@@ -374,18 +374,18 @@ func TestConfigMapVMPoolManagerRepairStateFromPrimaryConfig(t *testing.T) {
 	corruptedState := &IPAllocationState{
 		AllocatedIPs: map[string]IPAllocation{
 			"valid-allocation": {
-				AllocationID:  "valid-allocation",
-				IP:            "192.168.1.10", // Valid IP from primary config
-				NodeName:      "other-node",
-				PodName:       "valid-pod",
-				AllocatedAt:   metav1.Now(),
+				AllocationID: "valid-allocation",
+				IP:           "192.168.1.10", // Valid IP from primary config
+				NodeName:     "other-node",
+				PodName:      "valid-pod",
+				AllocatedAt:  metav1.Now(),
 			},
 			"invalid-allocation": {
-				AllocationID:  "invalid-allocation",
-				IP:            "10.0.0.1", // Invalid IP (not in primary config)
-				NodeName:      "other-node",
-				PodName:       "invalid-pod",
-				AllocatedAt:   metav1.Now(),
+				AllocationID: "invalid-allocation",
+				IP:           "10.0.0.1", // Invalid IP (not in primary config)
+				NodeName:     "other-node",
+				PodName:      "invalid-pod",
+				AllocatedAt:  metav1.Now(),
 			},
 		},
 		AvailableIPs: []string{"192.168.1.11", "10.0.0.2", "192.168.1.11"}, // Mix of valid, invalid, and duplicate
@@ -490,18 +490,18 @@ func TestConfigMapVMPoolManagerMismatchedPoolSizes(t *testing.T) {
 	mismatchedState := &IPAllocationState{
 		AllocatedIPs: map[string]IPAllocation{
 			"allocation-1": {
-				AllocationID:  "allocation-1",
-				IP:            "192.168.1.10", // Valid
-				NodeName:      "node-1",
-				PodName:       "pod-1",
-				AllocatedAt:   metav1.Now(),
+				AllocationID: "allocation-1",
+				IP:           "192.168.1.10", // Valid
+				NodeName:     "node-1",
+				PodName:      "pod-1",
+				AllocatedAt:  metav1.Now(),
 			},
 			"allocation-2": {
-				AllocationID:  "allocation-2",
-				IP:            "192.168.1.12", // Invalid - not in primary config
-				NodeName:      "node-2",
-				PodName:       "pod-2",
-				AllocatedAt:   metav1.Now(),
+				AllocationID: "allocation-2",
+				IP:           "192.168.1.12", // Invalid - not in primary config
+				NodeName:     "node-2",
+				PodName:      "pod-2",
+				AllocatedAt:  metav1.Now(),
 			},
 		},
 		// ConfigMap has 5 IPs, but primary config only has 2
@@ -591,11 +591,11 @@ func TestConfigMapVMPoolManagerMissingPrimaryIPs(t *testing.T) {
 	incompleteState := &IPAllocationState{
 		AllocatedIPs: map[string]IPAllocation{
 			"allocation-1": {
-				AllocationID:  "allocation-1",
-				IP:            "192.168.1.10", // Valid primary IP
-				NodeName:      "node-1",
-				PodName:       "pod-1",
-				AllocatedAt:   metav1.Now(),
+				AllocationID: "allocation-1",
+				IP:           "192.168.1.10", // Valid primary IP
+				NodeName:     "node-1",
+				PodName:      "pod-1",
+				AllocatedAt:  metav1.Now(),
 			},
 		},
 		// ConfigMap missing 192.168.1.12 and 192.168.1.13 from primary config

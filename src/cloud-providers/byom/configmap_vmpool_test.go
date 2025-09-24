@@ -114,7 +114,7 @@ func TestConfigMapVMPoolManagerAllocateIP(t *testing.T) {
 		ConfigMapName:    "test-configmap",
 		PoolIPs:          []string{"192.168.1.10", "192.168.1.11"},
 		OperationTimeout: 10000, // 10 seconds in milliseconds for timeout
-		SkipVMReadiness:  true,   // Skip VM readiness checks in tests
+		SkipVMReadiness:  true,  // Skip VM readiness checks in tests
 	}
 
 	client := fake.NewSimpleClientset()
@@ -275,8 +275,8 @@ func TestConfigMapVMPoolManagerGetAllocatedIP(t *testing.T) {
 		t.Fatalf("Failed to allocate IP: %v", err)
 	}
 
-	// Test GetAllocatedIP
-	retrievedIP, exists, err := manager.GetAllocatedIP(ctx, allocationID)
+	// Test GetIPfromAllocationID
+	retrievedIP, exists, err := manager.GetIPfromAllocationID(ctx, allocationID)
 	if err != nil {
 		t.Errorf("Failed to get allocated IP: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestConfigMapVMPoolManagerGetAllocatedIP(t *testing.T) {
 	}
 
 	// Test non-existent allocation
-	_, exists, err = manager.GetAllocatedIP(ctx, "non-existent")
+	_, exists, err = manager.GetIPfromAllocationID(ctx, "non-existent")
 	if err != nil {
 		t.Errorf("Unexpected error for non-existent allocation: %v", err)
 	}

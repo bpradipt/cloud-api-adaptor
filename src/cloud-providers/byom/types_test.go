@@ -35,7 +35,6 @@ func TestIPAllocation(t *testing.T) {
 		t.Errorf("Expected PodName 'test-pod', got %s", allocation.PodName)
 	}
 
-
 	if allocation.AllocatedAt != now {
 		t.Errorf("Expected AllocatedAt %v, got %v", now, allocation.AllocatedAt)
 	}

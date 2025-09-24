@@ -16,6 +16,7 @@ import (
 // byom-ip-pool-state ConfigMap holds the current state (allocated/available IPs)
 // The purpose of this function is to ensure that all the IPs in peer-pods-cm is part of the
 // byom-ip-pool-state
+// Currently we don't use the vmCleanupFunc as the cleanup of stale VMs is handled by peerpod controller. But this is there in case we want to change this approach in future.
 func (cm *ConfigMapVMPoolManager) RecoverState(ctx context.Context, vmCleanupFunc func(context.Context, netip.Addr) error) error {
 	// Lock the entire recovery process to prevent concurrent allocation interference
 	cm.mutex.Lock()

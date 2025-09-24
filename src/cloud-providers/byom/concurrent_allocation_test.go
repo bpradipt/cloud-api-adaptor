@@ -48,8 +48,8 @@ func TestConcurrentIPAllocation(t *testing.T) {
 		Namespace:        "default",
 		ConfigMapName:    "test-concurrent-allocation",
 		PoolIPs:          []string{"192.168.1.10", "192.168.1.11", "192.168.1.12"}, // Only 3 IPs
-		OperationTimeout: 10000, // 10 seconds
-		SkipVMReadiness:  true,  // Skip VM readiness checks in tests
+		OperationTimeout: 10000,                                                    // 10 seconds
+		SkipVMReadiness:  true,                                                     // Skip VM readiness checks in tests
 	}
 
 	manager, err := NewConfigMapVMPoolManager(client, config)

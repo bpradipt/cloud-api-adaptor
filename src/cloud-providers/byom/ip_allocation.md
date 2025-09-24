@@ -57,12 +57,12 @@ Implemented in `configmap_vmpool.go` using retry.RetryOnConflict
 
 ## State Recovery
 
+Ensures VM_POOL_IPS entries are reflected in the configmap used to managed the IP allocation state.
+
 Implemented in `state_recovery.go`. On CAA restart:
 
 1. **Node Detection**: Uses `NODE_NAME` env, `/etc/podinfo/nodename`, or `/etc/hostname`
-2. **Cleanup Integration**: Sends reboot signals to VMs before releasing IPs
-3. **Safety**: IPs with failed cleanup remain allocated to prevent inconsistency
-4. **Recovery Interface**: `RecoverState(ctx)` method in `GlobalVMPoolManager`
+2. **Recovery Interface**: `RecoverState(ctx)` method in `GlobalVMPoolManager`
 
 ## Conflict Resolution
 

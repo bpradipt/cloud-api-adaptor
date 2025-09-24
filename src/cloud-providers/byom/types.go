@@ -100,11 +100,11 @@ type GlobalVMPoolManager interface {
 	// DeallocateIP returns an IP to the global pool
 	DeallocateIP(ctx context.Context, allocationID string) error
 
-	// DeallocateByIP returns an IP to the pool by IP address
-	DeallocateByIP(ctx context.Context, ip netip.Addr) error
+	// GetIPfromAllocationID returns the IP allocated to a specific allocation ID
+	GetIPfromAllocationID(ctx context.Context, allocationID string) (netip.Addr, bool, error)
 
-	// GetAllocatedIP returns the IP allocated to a specific allocation ID
-	GetAllocatedIP(ctx context.Context, allocationID string) (netip.Addr, bool, error)
+	// GetAllocationIDfromIP returns the allocation ID for a given IP address
+	GetAllocationIDfromIP(ctx context.Context, ip netip.Addr) (string, bool, error)
 
 	// GetPoolStatus returns current pool statistics
 	GetPoolStatus(ctx context.Context) (total, available, inUse int, err error)
@@ -120,8 +120,8 @@ type GlobalVMPoolManager interface {
 type IPAllocation struct {
 	AllocationID string      `json:"allocationID"`
 	IP           string      `json:"ip"`
-	NodeName     string      `json:"nodeName"`     // Track which node allocated this IP
-	PodName      string      `json:"podName"`      // For better tracking and debugging
+	NodeName     string      `json:"nodeName"` // Track which node allocated this IP
+	PodName      string      `json:"podName"`  // For better tracking and debugging
 	AllocatedAt  metav1.Time `json:"allocatedAt"`
 }
 

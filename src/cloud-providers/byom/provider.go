@@ -106,7 +106,7 @@ func NewProvider(config *Config) (provider.Provider, error) {
 
 	// Initialize state recovery
 	ctx := context.Background()
-	if err := p.globalPoolMgr.RecoverState(ctx, p.sendRebootFile); err != nil {
+	if err := p.globalPoolMgr.RecoverState(ctx, nil); err != nil {
 		logger.Printf("Warning: failed to recover state: %v", err)
 	}
 
@@ -183,9 +183,19 @@ func (p *byomProvider) DeleteInstance(ctx context.Context, instanceID string) er
 		// Continue with deallocation even if reboot file sending fails
 	}
 
-	// Return IP to global pool
-	if err := p.globalPoolMgr.DeallocateByIP(ctx, ip); err != nil {
-		return fmt.Errorf("failed to deallocate IP %s: %w", ip.String(), err)
+	// Get allocation ID from IP
+	allocationID, found, err := p.globalPoolMgr.GetAllocationIDfromIP(ctx, ip)
+	if err != nil {
+		return fmt.Errorf("failed to get allocation ID for IP %s: %w", ip.String(), err)
+	}
+	if !found {
+		logger.Printf("IP %s not found in allocated pool, nothing to deallocate", ip.String())
+		return nil
+	}
+
+	// Return IP to global pool using allocation ID
+	if err := p.globalPoolMgr.DeallocateIP(ctx, allocationID); err != nil {
+		return fmt.Errorf("failed to deallocate IP %s (allocation ID: %s): %w", ip.String(), allocationID, err)
 	}
 
 	logger.Printf("Returned VM to pool: IP=%s", ip.String())
@@ -214,7 +224,7 @@ func (p *byomProvider) ConfigVerifier() error {
 	}
 
 	// SSH is disabled, only SFTP is used.
-	// Todo: check SFTP connectivity during verification?
+	// Todo: check VM connectivity here to verify the VM_POOL_IPS entries?
 
 	return nil
 }
