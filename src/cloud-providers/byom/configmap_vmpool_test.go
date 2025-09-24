@@ -114,6 +114,7 @@ func TestConfigMapVMPoolManagerAllocateIP(t *testing.T) {
 		ConfigMapName:    "test-configmap",
 		PoolIPs:          []string{"192.168.1.10", "192.168.1.11"},
 		OperationTimeout: 10000, // 10 seconds in milliseconds for timeout
+		SkipVMReadiness:  true,   // Skip VM readiness checks in tests
 	}
 
 	client := fake.NewSimpleClientset()
@@ -180,6 +181,7 @@ func TestConfigMapVMPoolManagerDeallocateIP(t *testing.T) {
 		ConfigMapName:    "test-configmap",
 		PoolIPs:          []string{"192.168.1.10", "192.168.1.11"},
 		OperationTimeout: 10000,
+		SkipVMReadiness:  true, // Skip VM readiness checks in tests
 	}
 
 	client := fake.NewSimpleClientset()
@@ -255,6 +257,7 @@ func TestConfigMapVMPoolManagerGetAllocatedIP(t *testing.T) {
 		ConfigMapName:    "test-configmap",
 		PoolIPs:          []string{"192.168.1.10"},
 		OperationTimeout: 10000,
+		SkipVMReadiness:  true, // Skip VM readiness checks in tests
 	}
 
 	client := fake.NewSimpleClientset()
@@ -306,6 +309,7 @@ func TestConfigMapVMPoolManagerListAllocatedIPs(t *testing.T) {
 		ConfigMapName:    "test-configmap",
 		PoolIPs:          []string{"192.168.1.10", "192.168.1.11"},
 		OperationTimeout: 10000,
+		SkipVMReadiness:  true, // Skip VM readiness checks in tests
 	}
 
 	client := fake.NewSimpleClientset()
@@ -410,6 +414,7 @@ func TestConfigMapVMPoolManagerErrorHandling(t *testing.T) {
 		ConfigMapName:    "test-configmap",
 		PoolIPs:          []string{"192.168.1.10"},
 		OperationTimeout: 10000,
+		SkipVMReadiness:  true, // Skip VM readiness checks in tests
 	}
 
 	client := fake.NewSimpleClientset()
@@ -442,6 +447,7 @@ func TestConfigMapVMPoolManagerDoubleAllocation(t *testing.T) {
 		ConfigMapName:    "test-configmap",
 		PoolIPs:          []string{"192.168.1.10"},
 		OperationTimeout: 10000,
+		SkipVMReadiness:  true, // Skip VM readiness checks in tests
 	}
 
 	client := fake.NewSimpleClientset()

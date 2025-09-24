@@ -200,10 +200,14 @@ func (cm *ConfigMapVMPoolManager) doAllocateIP(ctx context.Context, allocationID
 	logger.Printf("Selected IP %s (index %d of %d) for allocation %s",
 		ipStr, selectedIndex, len(state.AvailableIPs), allocationID)
 
-	// Verify VM is ready before committing to allocation
-	if err := cm.checkVMReadiness(ctx, ipStr); err != nil {
-		logger.Printf("VM %s failed readiness check. Can't be allocated: %v", ipStr, err)
-		return netip.Addr{}, fmt.Errorf("%w: %s: %w", ErrInvalidAllocatedIP, ipStr, err)
+	// Verify VM is ready before committing to allocation (skip in test mode)
+	if !cm.config.SkipVMReadiness {
+		if err := cm.checkVMReadiness(ctx, ipStr); err != nil {
+			logger.Printf("VM %s failed readiness check. Can't be allocated: %v", ipStr, err)
+			return netip.Addr{}, fmt.Errorf("%w: %s: %w", ErrInvalidAllocatedIP, ipStr, err)
+		}
+	} else {
+		logger.Printf("Skipping VM readiness check for IP %s (test mode)", ipStr)
 	}
 
 	// Remove selected IP from available pool

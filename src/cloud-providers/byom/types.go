@@ -87,6 +87,9 @@ type GlobalVMPoolConfig struct {
 
 	// Timeout configuration
 	OperationTimeout time.Duration
+
+	// Test configuration
+	SkipVMReadiness bool // Skip VM readiness checks (for testing)
 }
 
 // GlobalVMPoolManager defines the interface for global VM pool state management

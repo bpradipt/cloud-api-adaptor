@@ -48,7 +48,8 @@ func TestConcurrentIPAllocation(t *testing.T) {
 		Namespace:        "default",
 		ConfigMapName:    "test-concurrent-allocation",
 		PoolIPs:          []string{"192.168.1.10", "192.168.1.11", "192.168.1.12"}, // Only 3 IPs
-		OperationTimeout: 10000,                                                    // 10 seconds
+		OperationTimeout: 10000, // 10 seconds
+		SkipVMReadiness:  true,  // Skip VM readiness checks in tests
 	}
 
 	manager, err := NewConfigMapVMPoolManager(client, config)
@@ -190,6 +191,7 @@ func TestConcurrentAllocationAndDeallocation(t *testing.T) {
 		ConfigMapName:    "test-alloc-dealloc",
 		PoolIPs:          []string{"192.168.2.10", "192.168.2.11", "192.168.2.12", "192.168.2.13", "192.168.2.14"},
 		OperationTimeout: 10000,
+		SkipVMReadiness:  true, // Skip VM readiness checks in tests
 	}
 
 	manager, err := NewConfigMapVMPoolManager(client, config)
@@ -330,6 +332,7 @@ func TestHashBasedIPDistribution(t *testing.T) {
 		ConfigMapName:    "test-hash-distribution",
 		PoolIPs:          []string{"192.168.3.10", "192.168.3.11", "192.168.3.12", "192.168.3.13", "192.168.3.14", "192.168.3.15"},
 		OperationTimeout: 10000,
+		SkipVMReadiness:  true, // Skip VM readiness checks in tests
 	}
 
 	manager, err := NewConfigMapVMPoolManager(client, config)

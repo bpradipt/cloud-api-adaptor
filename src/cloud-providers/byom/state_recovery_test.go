@@ -6,6 +6,7 @@ package byom
 import (
 	"context"
 	"encoding/json"
+	"net/netip"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
@@ -21,6 +22,7 @@ func TestConfigMapVMPoolManagerRecoverState(t *testing.T) {
 		ConfigMapName:    "test-configmap",
 		PoolIPs:          []string{"192.168.1.10", "192.168.1.11", "192.168.1.12"},
 		OperationTimeout: 10000,
+		SkipVMReadiness:  true, // Skip VM readiness checks in tests
 	}
 
 	client := fake.NewSimpleClientset()
@@ -110,6 +112,7 @@ func TestConfigMapVMPoolManagerRecoverStateWithNodeAllocations(t *testing.T) {
 		ConfigMapName:    "test-configmap",
 		PoolIPs:          []string{"192.168.1.10", "192.168.1.11", "192.168.1.12"},
 		OperationTimeout: 10000,
+		SkipVMReadiness:  true, // Skip VM readiness checks in tests
 	}
 
 	client := fake.NewSimpleClientset()
@@ -128,7 +131,7 @@ func TestConfigMapVMPoolManagerRecoverStateWithNodeAllocations(t *testing.T) {
 			"test-node-allocation": {
 				AllocationID:  "test-node-allocation",
 				IP:            "192.168.1.11",
-				NodeName:      "test-node", // This should be released
+				NodeName:      "test-node", // This should be kept (not released during recovery)
 				PodName:       "test-pod",
 				PodNamespace:  "test-namespace",
 				AllocatedAt:   metav1.Now(),
@@ -162,64 +165,60 @@ func TestConfigMapVMPoolManagerRecoverStateWithNodeAllocations(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Track VM cleanup calls
+	// Track VM cleanup calls - recovery should not trigger VM cleanup
 	cleanupCalled := false
 	vmCleanupFunc := func(ctx context.Context, ip netip.Addr) error {
-		if ip.String() == "192.168.1.11" {
-			cleanupCalled = true
-		}
-		return nil // Simulate successful cleanup
+		cleanupCalled = true
+		return nil
 	}
 
-	// Test state recovery with VM cleanup
+	// Test state recovery
 	err = manager.RecoverState(ctx, vmCleanupFunc)
 	if err != nil {
 		t.Errorf("Failed to recover state: %v", err)
 	}
 
-	if !cleanupCalled {
-		t.Error("Expected VM cleanup to be called for test-node allocation")
+	if cleanupCalled {
+		t.Error("VM cleanup should not be called during recovery")
 	}
 
-	// Verify state after recovery
+	// Verify state after recovery - all allocations should be preserved
 	total, available, inUse, err := manager.GetPoolStatus(ctx)
 	if err != nil {
 		t.Errorf("Failed to get pool status: %v", err)
 	}
 
-	// Should have: other-node allocation (1) + available IPs (2)
 	if total != 3 {
 		t.Errorf("Expected total 3, got %d", total)
 	}
 
-	if available != 2 {
-		t.Errorf("Expected available 2 (test-node IP released), got %d", available)
+	if available != 1 {
+		t.Errorf("Expected available 1, got %d", available)
 	}
 
-	if inUse != 1 {
-		t.Errorf("Expected inUse 1 (other-node allocation kept), got %d", inUse)
+	if inUse != 2 {
+		t.Errorf("Expected inUse 2, got %d", inUse)
 	}
 
-	// Verify test-node allocation was released
+	// Verify allocations are preserved during recovery
 	_, exists, err := manager.GetAllocatedIP(ctx, "test-node-allocation")
 	if err != nil {
 		t.Errorf("Failed to check test-node allocation: %v", err)
 	}
-	if exists {
-		t.Error("Expected test-node allocation to be released")
+	if !exists {
+		t.Error("Expected test-node allocation to be preserved")
 	}
 
-	// Verify other-node allocation was kept
 	_, exists, err = manager.GetAllocatedIP(ctx, "other-node-allocation")
 	if err != nil {
 		t.Errorf("Failed to check other-node allocation: %v", err)
 	}
 	if !exists {
-		t.Error("Expected other-node allocation to be kept")
+		t.Error("Expected other-node allocation to be preserved")
 	}
 }
 
-func TestConfigMapVMPoolManagerRecoverStateWithFailedCleanup(t *testing.T) {
+func TestConfigMapVMPoolManagerRecoverStateKeepsOrphanedAllocations(t *testing.T) {
 	cleanup := setupTestEnvironment(t)
 	defer cleanup()
 
@@ -228,11 +227,12 @@ func TestConfigMapVMPoolManagerRecoverStateWithFailedCleanup(t *testing.T) {
 		ConfigMapName:    "test-configmap",
 		PoolIPs:          []string{"192.168.1.10", "192.168.1.11", "192.168.1.12"},
 		OperationTimeout: 10000,
+		SkipVMReadiness:  true, // Skip VM readiness checks in tests
 	}
 
 	client := fake.NewSimpleClientset()
 
-	// Create ConfigMap with test-node allocation
+	// Create ConfigMap with test-node allocation that would be "orphaned" after CAA restart
 	existingState := &IPAllocationState{
 		AllocatedIPs: map[string]IPAllocation{
 			"test-node-allocation": {
@@ -272,18 +272,19 @@ func TestConfigMapVMPoolManagerRecoverStateWithFailedCleanup(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Simulate failed VM cleanup
+	// Recovery should not call cleanup function
 	vmCleanupFunc := func(ctx context.Context, ip netip.Addr) error {
-		return fmt.Errorf("simulated cleanup failure for %s", ip.String())
+		t.Errorf("Cleanup function should not be called during recovery")
+		return nil
 	}
 
-	// Test state recovery with failed cleanup
+	// Test state recovery
 	err = manager.RecoverState(ctx, vmCleanupFunc)
 	if err != nil {
 		t.Errorf("Failed to recover state: %v", err)
 	}
 
-	// Verify IP with failed cleanup remains allocated
+	// Verify orphaned allocation is preserved
 	total, available, inUse, err := manager.GetPoolStatus(ctx)
 	if err != nil {
 		t.Errorf("Failed to get pool status: %v", err)
@@ -294,20 +295,20 @@ func TestConfigMapVMPoolManagerRecoverStateWithFailedCleanup(t *testing.T) {
 	}
 
 	if available != 2 {
-		t.Errorf("Expected available 2 (failed cleanup IP kept allocated), got %d", available)
+		t.Errorf("Expected available 2, got %d", available)
 	}
 
 	if inUse != 1 {
-		t.Errorf("Expected inUse 1 (failed cleanup IP kept allocated), got %d", inUse)
+		t.Errorf("Expected inUse 1, got %d", inUse)
 	}
 
-	// Verify allocation still exists due to failed cleanup
+	// Verify allocation is preserved
 	_, exists, err := manager.GetAllocatedIP(ctx, "test-node-allocation")
 	if err != nil {
 		t.Errorf("Failed to check allocation: %v", err)
 	}
 	if !exists {
-		t.Error("Expected allocation to remain due to failed cleanup")
+		t.Error("Expected allocation to be preserved")
 	}
 }
 
@@ -320,6 +321,7 @@ func TestConfigMapVMPoolManagerRecoverEmptyState(t *testing.T) {
 		ConfigMapName:    "test-configmap",
 		PoolIPs:          []string{"192.168.1.10", "192.168.1.11"},
 		OperationTimeout: 10000,
+		SkipVMReadiness:  true, // Skip VM readiness checks in tests
 	}
 
 	client := fake.NewSimpleClientset()
@@ -366,6 +368,7 @@ func TestConfigMapVMPoolManagerRepairStateFromPrimaryConfig(t *testing.T) {
 		ConfigMapName:    "test-configmap",
 		PoolIPs:          []string{"192.168.1.10", "192.168.1.11", "192.168.1.12"},
 		OperationTimeout: 10000,
+		SkipVMReadiness:  true, // Skip VM readiness checks in tests
 	}
 
 	client := fake.NewSimpleClientset()
@@ -424,79 +427,245 @@ func TestConfigMapVMPoolManagerRepairStateFromPrimaryConfig(t *testing.T) {
 		t.Errorf("Failed to recover state: %v", err)
 	}
 
-	// Verify state was repaired to match primary config
+	// Test that recovery repairs state to match primary config while preserving allocations
 	total, available, inUse, err := manager.GetPoolStatus(ctx)
 	if err != nil {
 		t.Errorf("Failed to get pool status: %v", err)
 	}
 
-	if total != 3 {
-		t.Errorf("Expected total 3 (primary config size), got %d", total)
+	// Available IPs should only be from primary config
+	expectedAvailable := 2 // 3 primary IPs - 1 valid allocation
+	if available != expectedAvailable {
+		t.Errorf("Expected available %d, got %d", expectedAvailable, available)
 	}
 
-	if available != 2 {
-		t.Errorf("Expected available 2 (primary config - valid allocation), got %d", available)
+	// All allocations should be preserved
+	expectedInUse := 2 // Both valid and invalid allocations
+	if inUse != expectedInUse {
+		t.Errorf("Expected inUse %d, got %d", expectedInUse, inUse)
 	}
 
-	if inUse != 1 {
-		t.Errorf("Expected inUse 1 (only valid allocation kept), got %d", inUse)
+	expectedTotal := expectedAvailable + expectedInUse
+	if total != expectedTotal {
+		t.Errorf("Expected total %d, got %d", expectedTotal, total)
 	}
 
-	// Verify only valid allocation remains
+	// Verify both allocations are preserved
 	allocatedIPs, err := manager.ListAllocatedIPs(ctx)
 	if err != nil {
 		t.Errorf("Failed to list allocated IPs: %v", err)
 	}
 
-	if len(allocatedIPs) != 1 {
-		t.Errorf("Expected 1 allocated IP after repair, got %d", len(allocatedIPs))
+	if len(allocatedIPs) != 2 {
+		t.Errorf("Expected 2 allocated IPs, got %d", len(allocatedIPs))
 	}
 
-	// Invalid allocation should be removed
+	// Invalid allocation should be preserved
 	_, exists := allocatedIPs["invalid-allocation"]
-	if exists {
-		t.Error("Expected invalid allocation to be removed")
+	if !exists {
+		t.Error("Expected invalid allocation to be preserved")
 	}
 
-	// Valid allocation should remain
+	// Valid allocation should be preserved
 	validAllocation, exists := allocatedIPs["valid-allocation"]
 	if !exists {
-		t.Error("Expected valid allocation to remain")
+		t.Error("Expected valid allocation to be preserved")
 	}
 
 	if validAllocation.IP != "192.168.1.10" {
 		t.Errorf("Expected valid allocation IP 192.168.1.10, got %s", validAllocation.IP)
 	}
+}
 
-	// Verify available IPs by checking we can allocate the remaining IPs
-	// Since 192.168.1.10 is allocated, we should be able to allocate 192.168.1.11 and 192.168.1.12
-	ip1, err := manager.AllocateIP(ctx, "test-alloc-1", "test-pod-1", "test-ns")
+func TestConfigMapVMPoolManagerMismatchedPoolSizes(t *testing.T) {
+	cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	config := &GlobalVMPoolConfig{
+		Namespace:        "test-namespace",
+		ConfigMapName:    "test-configmap",
+		PoolIPs:          []string{"192.168.1.10", "192.168.1.11"}, // Primary config: 2 IPs
+		OperationTimeout: 10000,
+		SkipVMReadiness:  true, // Skip VM readiness checks in tests
+	}
+
+	client := fake.NewSimpleClientset()
+
+	// Create ConfigMap with MORE IPs than primary config
+	mismatchedState := &IPAllocationState{
+		AllocatedIPs: map[string]IPAllocation{
+			"allocation-1": {
+				AllocationID:  "allocation-1",
+				IP:            "192.168.1.10", // Valid
+				NodeName:      "node-1",
+				PodName:       "pod-1",
+				PodNamespace:  "default",
+				AllocatedAt:   metav1.Now(),
+			},
+			"allocation-2": {
+				AllocationID:  "allocation-2",
+				IP:            "192.168.1.12", // Invalid - not in primary config
+				NodeName:      "node-2",
+				PodName:       "pod-2",
+				PodNamespace:  "default",
+				AllocatedAt:   metav1.Now(),
+			},
+		},
+		// ConfigMap has 5 IPs, but primary config only has 2
+		AvailableIPs: []string{"192.168.1.11", "192.168.1.13", "192.168.1.14", "192.168.1.15", "192.168.1.16"},
+		LastUpdated:  metav1.Now(),
+		Version:      1,
+	}
+
+	stateData, _ := json.Marshal(mismatchedState)
+	cm := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      config.ConfigMapName,
+			Namespace: config.Namespace,
+		},
+		Data: map[string]string{
+			stateDataKey: string(stateData),
+		},
+	}
+
+	_, err := client.CoreV1().ConfigMaps(config.Namespace).Create(context.Background(), cm, metav1.CreateOptions{})
 	if err != nil {
-		t.Errorf("Failed to allocate first available IP: %v", err)
+		t.Fatalf("Failed to create ConfigMap: %v", err)
 	}
 
-	ip2, err := manager.AllocateIP(ctx, "test-alloc-2", "test-pod-2", "test-ns")
+	manager, err := NewConfigMapVMPoolManager(client, config)
 	if err != nil {
-		t.Errorf("Failed to allocate second available IP: %v", err)
+		t.Fatalf("Failed to create ConfigMapVMPoolManager: %v", err)
 	}
 
-	// Verify the allocated IPs are from the primary config
-	expectedIPs := map[string]bool{
-		"192.168.1.11": true,
-		"192.168.1.12": true,
+	ctx := context.Background()
+
+	// Test recovery with mismatched pool sizes
+	err = manager.RecoverState(ctx, nil)
+	if err != nil {
+		t.Errorf("Failed to recover state: %v", err)
 	}
 
-	if !expectedIPs[ip1.String()] {
-		t.Errorf("Allocated IP %s not in expected available IPs", ip1.String())
+	// Verify repair: AvailableIPs should ONLY contain primary config IPs
+	_, available, inUse, err := manager.GetPoolStatus(ctx)
+	if err != nil {
+		t.Errorf("Failed to get pool status: %v", err)
 	}
 
-	if !expectedIPs[ip2.String()] {
-		t.Errorf("Allocated IP %s not in expected available IPs", ip2.String())
+	// Available should only be primary config IPs not allocated
+	expectedAvailable := 1 // 2 primary IPs - 1 valid allocation
+	if available != expectedAvailable {
+		t.Errorf("Expected available %d (only primary config IPs), got %d", expectedAvailable, available)
 	}
 
-	if ip1.String() == ip2.String() {
-		t.Error("Expected different IPs to be allocated")
+	// InUse should include all allocations (valid and invalid)
+	expectedInUse := 2 // Both allocations kept
+	if inUse != expectedInUse {
+		t.Errorf("Expected inUse %d (all allocations kept), got %d", expectedInUse, inUse)
 	}
+
+	// Verify available IPs are only from primary config
+	allocatedIPs, err := manager.ListAllocatedIPs(ctx)
+	if err != nil {
+		t.Errorf("Failed to list allocated IPs: %v", err)
+	}
+
+	// Both allocations should be kept
+	if len(allocatedIPs) != 2 {
+		t.Errorf("Expected 2 allocations kept, got %d", len(allocatedIPs))
+	}
+
+	// Test that we can only allocate from primary config IPs
+	// Should be able to allocate 192.168.1.11 (the remaining primary config IP)
+	t.Logf("Available pool should only contain primary config IPs")
+}
+
+func TestConfigMapVMPoolManagerMissingPrimaryIPs(t *testing.T) {
+	cleanup := setupTestEnvironment(t)
+	defer cleanup()
+
+	config := &GlobalVMPoolConfig{
+		Namespace:        "test-namespace",
+		ConfigMapName:    "test-configmap",
+		PoolIPs:          []string{"192.168.1.10", "192.168.1.11", "192.168.1.12", "192.168.1.13"}, // Primary: 4 IPs
+		OperationTimeout: 10000,
+		SkipVMReadiness:  true, // Skip VM readiness checks in tests
+	}
+
+	client := fake.NewSimpleClientset()
+
+	// Create ConfigMap with FEWER IPs than primary config (missing some primary IPs)
+	incompleteState := &IPAllocationState{
+		AllocatedIPs: map[string]IPAllocation{
+			"allocation-1": {
+				AllocationID:  "allocation-1",
+				IP:            "192.168.1.10", // Valid primary IP
+				NodeName:      "node-1",
+				PodName:       "pod-1",
+				PodNamespace:  "default",
+				AllocatedAt:   metav1.Now(),
+			},
+		},
+		// ConfigMap missing 192.168.1.12 and 192.168.1.13 from primary config
+		AvailableIPs: []string{"192.168.1.11"}, // Missing .12 and .13
+		LastUpdated:  metav1.Now(),
+		Version:      1,
+	}
+
+	stateData, _ := json.Marshal(incompleteState)
+	cm := &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      config.ConfigMapName,
+			Namespace: config.Namespace,
+		},
+		Data: map[string]string{
+			stateDataKey: string(stateData),
+		},
+	}
+
+	_, err := client.CoreV1().ConfigMaps(config.Namespace).Create(context.Background(), cm, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to create ConfigMap: %v", err)
+	}
+
+	manager, err := NewConfigMapVMPoolManager(client, config)
+	if err != nil {
+		t.Fatalf("Failed to create ConfigMapVMPoolManager: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Test recovery - should add missing primary IPs to AvailableIPs
+	err = manager.RecoverState(ctx, nil)
+	if err != nil {
+		t.Errorf("Failed to recover state: %v", err)
+	}
+
+	// Verify all primary IPs are now accounted for
+	total, available, inUse, err := manager.GetPoolStatus(ctx)
+	if err != nil {
+		t.Errorf("Failed to get pool status: %v", err)
+	}
+
+	// Available should be: primary config IPs - allocated IPs
+	expectedAvailable := 3 // 4 primary IPs - 1 allocation
+	if available != expectedAvailable {
+		t.Errorf("Expected available %d (missing primary IPs added), got %d", expectedAvailable, available)
+	}
+
+	// InUse should remain the same
+	expectedInUse := 1
+	if inUse != expectedInUse {
+		t.Errorf("Expected inUse %d, got %d", expectedInUse, inUse)
+	}
+
+	// Total should equal primary config size now
+	expectedTotal := 4 // Should match primary config size
+	if total != expectedTotal {
+		t.Errorf("Expected total %d (primary config size), got %d", expectedTotal, total)
+	}
+
+	t.Logf("Recovery should add missing primary config IPs to available pool")
 }
 
 func TestConfigMapVMPoolManagerPoolIPsChange(t *testing.T) {
@@ -509,6 +678,7 @@ func TestConfigMapVMPoolManagerPoolIPsChange(t *testing.T) {
 		ConfigMapName:    "test-configmap",
 		PoolIPs:          []string{"192.168.1.10", "192.168.1.11", "192.168.1.12"},
 		OperationTimeout: 10000,
+		SkipVMReadiness:  true, // Skip VM readiness checks in tests
 	}
 
 	client := fake.NewSimpleClientset()

@@ -7,10 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
-	"sync"
-	"time"
 
-	"golang.org/x/sync/errgroup"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -38,9 +35,20 @@ func (cm *ConfigMapVMPoolManager) RecoverState(ctx context.Context, vmCleanupFun
 		logger.Printf("State recovered from ConfigMap: %d total IPs, %d allocated, %d available",
 			total, len(state.AllocatedIPs), len(state.AvailableIPs))
 
-		// Release node allocations and repair state in single atomic operation
-		if err := cm.releaseNodeAllocationsAndRepairState(ctx, state, currentNode, vmCleanupFunc); err != nil {
-			logger.Printf("Warning: failed to release node allocations and repair state: %v", err)
+		// Log node allocations but do NOT release them - let PeerPod controller handle cleanup
+		nodeAllocations := 0
+		for _, allocation := range state.AllocatedIPs {
+			if allocation.NodeName == currentNode {
+				nodeAllocations++
+				logger.Printf("Found allocation on current node %s: IP=%s, Pod=%s/%s",
+					currentNode, allocation.IP, allocation.PodNamespace, allocation.PodName)
+			}
+		}
+		logger.Printf("Current node %s has %d allocations - will be cleaned by PeerPod controller", currentNode, nodeAllocations)
+
+		// Only repair state to match primary configuration (keep all allocations)
+		if err := cm.repairStateFromPrimaryConfig(ctx); err != nil {
+			logger.Printf("Warning: failed to repair state from primary config: %v", err)
 		}
 
 		return nil
@@ -51,105 +59,26 @@ func (cm *ConfigMapVMPoolManager) RecoverState(ctx context.Context, vmCleanupFun
 	return cm.initializeAndSaveEmptyState(ctx)
 }
 
-// releaseNodeAllocationsAndRepairState releases node allocations with VM cleanup and repairs state to match primary config
-// Final AvailableIPs = config.PoolIPs - (other nodes' allocated IPs) - (current node IPs that failed cleanup)
-func (cm *ConfigMapVMPoolManager) releaseNodeAllocationsAndRepairState(ctx context.Context, state *IPAllocationState, nodeName string, vmCleanupFunc func(context.Context, netip.Addr) error) error {
-	allocationsToProcess := make(map[string]IPAllocation)
-	finalAllocatedIPs := make(map[string]IPAllocation)
 
-	// 1. Separate current node allocations from other nodes
-	for allocID, allocation := range state.AllocatedIPs {
-		if allocation.NodeName == nodeName {
-			allocationsToProcess[allocation.IP] = allocation
-		} else {
-			finalAllocatedIPs[allocID] = allocation // Keep allocations from other nodes
-		}
+// repairStateFromPrimaryConfig rebuilds the state to match the primary configuration from peer-pods-cm
+// AvailableIPs = config.PoolIPs - currently allocated IPs (keeps ALL allocations for PeerPod controller cleanup)
+func (cm *ConfigMapVMPoolManager) repairStateFromPrimaryConfig(ctx context.Context) error {
+	// Get current state
+	currentState, _, err := cm.getCurrentState(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get current state for repair: %w", err)
 	}
 
-	if len(allocationsToProcess) == 0 {
-		logger.Printf("No IP allocations found for node %s", nodeName)
-	} else {
-		logger.Printf("Found %d IPs to process from node %s", len(allocationsToProcess), nodeName)
+	// Keep ALL existing allocations - let PeerPod controller handle cleanup of orphaned pods
+	// This prevents race conditions during CAA restart
+	validAllocatedIPs := currentState.AllocatedIPs
 
-		// 2. Perform VM cleanup concurrently
-		var cleanupResults sync.Map // Store cleanup errors
-		if vmCleanupFunc != nil {
-			g, gCtx := errgroup.WithContext(ctx)
-
-			for ipStr := range allocationsToProcess {
-				ipStr := ipStr // Capture loop variable for the goroutine
-				g.Go(func() error {
-					ip, err := netip.ParseAddr(ipStr)
-					if err != nil {
-						return fmt.Errorf("invalid IP in allocation state: %s", ipStr)
-					}
-
-					logger.Printf("Sending reboot file to VM %s", ip.String())
-					if cleanupErr := vmCleanupFunc(gCtx, ip); cleanupErr != nil {
-						logger.Printf("Warning: failed to send reboot file to VM %s: %v", ip.String(), cleanupErr)
-						cleanupResults.Store(ipStr, cleanupErr)
-					}
-					return nil // Don't fail the whole group for one failed cleanup
-				})
-			}
-
-			// Wait for all cleanup goroutines to finish
-			if err := g.Wait(); err != nil {
-				return fmt.Errorf("error during concurrent cleanup: %w", err)
-			}
-
-			// Wait for VMs to process reboot files
-			waitDuration := 15 * time.Second // TODO: Make configurable
-			logger.Printf("Waiting %v for VMs to process reboot files", waitDuration)
-			select {
-			case <-time.After(waitDuration):
-			case <-ctx.Done():
-				return fmt.Errorf("context cancelled during VM cleanup wait: %w", ctx.Err())
-			}
-		}
-
-		// 3. Keep current node IPs as allocated if cleanup failed
-		successfullyCleanedCount := 0
-		for ip, allocation := range allocationsToProcess {
-			if _, failed := cleanupResults.Load(ip); failed {
-				// Cleanup failed, keep IP as allocated to prevent reuse of dirty VM
-				for id, alloc := range state.AllocatedIPs {
-					if alloc.IP == ip {
-						finalAllocatedIPs[id] = allocation
-						break
-					}
-				}
-				logger.Printf("Keeping IP %s allocated for node %s due to failed cleanup", ip, nodeName)
-			} else {
-				// Cleanup succeeded, IP will become available
-				successfullyCleanedCount++
-				logger.Printf("Successfully cleaned IP %s from node %s", ip, nodeName)
-			}
-		}
-
-		logger.Printf("Released %d IPs, kept %d IPs allocated due to cleanup failures for node %s",
-			successfullyCleanedCount, len(allocationsToProcess)-successfullyCleanedCount, nodeName)
-	}
-
-	// 4. Repair state to match primary configuration: AvailableIPs = config.PoolIPs - finalAllocatedIPs
-	primaryIPSet := make(map[string]bool)
-	for _, ip := range cm.config.PoolIPs {
-		primaryIPSet[ip] = true
-	}
-
-	// Filter out any allocated IPs not in primary configuration
-	validAllocatedIPs := make(map[string]IPAllocation)
+	// Build AvailableIPs = primary config - all allocated IPs
 	allocatedIPSet := make(map[string]bool)
-	for allocID, allocation := range finalAllocatedIPs {
-		if primaryIPSet[allocation.IP] {
-			validAllocatedIPs[allocID] = allocation
-			allocatedIPSet[allocation.IP] = true
-		} else {
-			logger.Printf("Warning: removing allocated IP %s not in primary configuration", allocation.IP)
-		}
+	for _, allocation := range validAllocatedIPs {
+		allocatedIPSet[allocation.IP] = true
 	}
 
-	// Build AvailableIPs = primary config - allocated IPs
 	availableIPs := []string{}
 	for _, ip := range cm.config.PoolIPs {
 		if !allocatedIPSet[ip] {
@@ -157,22 +86,23 @@ func (cm *ConfigMapVMPoolManager) releaseNodeAllocationsAndRepairState(ctx conte
 		}
 	}
 
-	// 5. Single atomic state update
-	finalState := &IPAllocationState{
-		AllocatedIPs: validAllocatedIPs,
+	// Update state with repaired configuration
+	repairedState := &IPAllocationState{
+		AllocatedIPs: validAllocatedIPs, // Keep all allocations unchanged
 		AvailableIPs: availableIPs,
 		LastUpdated:  metav1.Now(),
-		Version:      state.Version + 1,
+		Version:      currentState.Version + 1,
 	}
 
-	logger.Printf("Final state: primary config has %d IPs, %d allocated, %d available",
+	logger.Printf("Repairing state: primary config has %d IPs, keeping %d allocated (including orphaned), %d available",
 		len(cm.config.PoolIPs), len(validAllocatedIPs), len(availableIPs))
 
-	if err := cm.updateState(ctx, finalState); err != nil {
-		return fmt.Errorf("failed to update final state: %w", err)
+	// Atomic update - handles concurrent CAA instances
+	if err := cm.updateState(ctx, repairedState); err != nil {
+		return fmt.Errorf("failed to update repaired state: %w", err)
 	}
 
-	logger.Printf("Successfully released node allocations and repaired state to match primary configuration")
+	logger.Printf("State successfully repaired to match primary configuration - PeerPod controller will handle orphaned allocations")
 	return nil
 }
 
