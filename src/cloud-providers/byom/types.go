@@ -95,7 +95,7 @@ type GlobalVMPoolConfig struct {
 // GlobalVMPoolManager defines the interface for global VM pool state management
 type GlobalVMPoolManager interface {
 	// AllocateIP allocates an IP from the global pool
-	AllocateIP(ctx context.Context, allocationID string, podName, podNamespace string) (netip.Addr, error)
+	AllocateIP(ctx context.Context, allocationID string, podName string) (netip.Addr, error)
 
 	// DeallocateIP returns an IP to the global pool
 	DeallocateIP(ctx context.Context, allocationID string) error
@@ -122,7 +122,6 @@ type IPAllocation struct {
 	IP           string      `json:"ip"`
 	NodeName     string      `json:"nodeName"`     // Track which node allocated this IP
 	PodName      string      `json:"podName"`      // For better tracking and debugging
-	PodNamespace string      `json:"podNamespace"` // For better tracking and debugging
 	AllocatedAt  metav1.Time `json:"allocatedAt"`
 }
 

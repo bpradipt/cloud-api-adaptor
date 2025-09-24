@@ -125,7 +125,6 @@ func TestConfigMapVMPoolManagerRecoverStateWithNodeAllocations(t *testing.T) {
 				IP:            "192.168.1.10",
 				NodeName:      "other-node",
 				PodName:       "other-pod",
-				PodNamespace:  "other-namespace",
 				AllocatedAt:   metav1.Now(),
 			},
 			"test-node-allocation": {
@@ -133,7 +132,6 @@ func TestConfigMapVMPoolManagerRecoverStateWithNodeAllocations(t *testing.T) {
 				IP:            "192.168.1.11",
 				NodeName:      "test-node", // This should be kept (not released during recovery)
 				PodName:       "test-pod",
-				PodNamespace:  "test-namespace",
 				AllocatedAt:   metav1.Now(),
 			},
 		},
@@ -240,7 +238,6 @@ func TestConfigMapVMPoolManagerRecoverStateKeepsOrphanedAllocations(t *testing.T
 				IP:            "192.168.1.10",
 				NodeName:      "test-node",
 				PodName:       "test-pod",
-				PodNamespace:  "test-namespace",
 				AllocatedAt:   metav1.Now(),
 			},
 		},
@@ -381,7 +378,6 @@ func TestConfigMapVMPoolManagerRepairStateFromPrimaryConfig(t *testing.T) {
 				IP:            "192.168.1.10", // Valid IP from primary config
 				NodeName:      "other-node",
 				PodName:       "valid-pod",
-				PodNamespace:  "valid-namespace",
 				AllocatedAt:   metav1.Now(),
 			},
 			"invalid-allocation": {
@@ -389,7 +385,6 @@ func TestConfigMapVMPoolManagerRepairStateFromPrimaryConfig(t *testing.T) {
 				IP:            "10.0.0.1", // Invalid IP (not in primary config)
 				NodeName:      "other-node",
 				PodName:       "invalid-pod",
-				PodNamespace:  "invalid-namespace",
 				AllocatedAt:   metav1.Now(),
 			},
 		},
@@ -499,7 +494,6 @@ func TestConfigMapVMPoolManagerMismatchedPoolSizes(t *testing.T) {
 				IP:            "192.168.1.10", // Valid
 				NodeName:      "node-1",
 				PodName:       "pod-1",
-				PodNamespace:  "default",
 				AllocatedAt:   metav1.Now(),
 			},
 			"allocation-2": {
@@ -507,7 +501,6 @@ func TestConfigMapVMPoolManagerMismatchedPoolSizes(t *testing.T) {
 				IP:            "192.168.1.12", // Invalid - not in primary config
 				NodeName:      "node-2",
 				PodName:       "pod-2",
-				PodNamespace:  "default",
 				AllocatedAt:   metav1.Now(),
 			},
 		},
@@ -602,7 +595,6 @@ func TestConfigMapVMPoolManagerMissingPrimaryIPs(t *testing.T) {
 				IP:            "192.168.1.10", // Valid primary IP
 				NodeName:      "node-1",
 				PodName:       "pod-1",
-				PodNamespace:  "default",
 				AllocatedAt:   metav1.Now(),
 			},
 		},

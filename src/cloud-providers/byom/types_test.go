@@ -16,7 +16,6 @@ func TestIPAllocation(t *testing.T) {
 		IP:           "192.168.1.10",
 		NodeName:     "test-node",
 		PodName:      "test-pod",
-		PodNamespace: "test-namespace",
 		AllocatedAt:  now,
 	}
 
@@ -36,9 +35,6 @@ func TestIPAllocation(t *testing.T) {
 		t.Errorf("Expected PodName 'test-pod', got %s", allocation.PodName)
 	}
 
-	if allocation.PodNamespace != "test-namespace" {
-		t.Errorf("Expected PodNamespace 'test-namespace', got %s", allocation.PodNamespace)
-	}
 
 	if allocation.AllocatedAt != now {
 		t.Errorf("Expected AllocatedAt %v, got %v", now, allocation.AllocatedAt)
@@ -53,7 +49,6 @@ func TestIPAllocationState(t *testing.T) {
 				IP:           "192.168.1.10",
 				NodeName:     "test-node",
 				PodName:      "test-pod",
-				PodNamespace: "test-namespace",
 				AllocatedAt:  metav1.Now(),
 			},
 		},

@@ -42,7 +42,6 @@ func TestNodeSpecificStateRecovery(t *testing.T) {
 				IP:           "192.168.1.10",
 				NodeName:     "node-1",
 				PodName:      "pod1",
-				PodNamespace: "default",
 				AllocatedAt:  metav1.Now(),
 			},
 			"pod2-sandbox1": {
@@ -50,7 +49,6 @@ func TestNodeSpecificStateRecovery(t *testing.T) {
 				IP:           "192.168.1.11",
 				NodeName:     "node-2",
 				PodName:      "pod2",
-				PodNamespace: "kube-system",
 				AllocatedAt:  metav1.Now(),
 			},
 		},
@@ -90,35 +88,47 @@ func TestNodeSpecificStateRecovery(t *testing.T) {
 		t.Fatalf("State recovery failed: %v", err)
 	}
 
-	// Verify that node-1's allocation was released but node-2's was kept
+	// Verify that all allocations are preserved (peerpod controller handles cleanup)
 	allocatedIPs, err := manager.ListAllocatedIPs(ctx)
 	if err != nil {
 		t.Fatalf("Failed to list allocated IPs: %v", err)
 	}
 
-	// Should only have node-2's allocation remaining
-	if len(allocatedIPs) != 1 {
-		t.Errorf("Expected 1 remaining allocation, got %d", len(allocatedIPs))
+	// Should have both allocations remaining (CAA doesn't release during recovery)
+	if len(allocatedIPs) != 2 {
+		t.Errorf("Expected 2 remaining allocations, got %d", len(allocatedIPs))
 	}
 
+	// Verify both allocations are preserved
+	node1Found := false
+	node2Found := false
 	for allocID, allocation := range allocatedIPs {
-		if allocation.NodeName != "node-2" {
-			t.Errorf("Expected allocation from node-2, got allocation %s from node %s", allocID, allocation.NodeName)
+		if allocation.NodeName == "node-1" && allocation.IP == "192.168.1.10" {
+			node1Found = true
+			t.Logf("Found preserved node-1 allocation: %s -> %s", allocID, allocation.IP)
 		}
-		if allocation.IP != "192.168.1.11" {
-			t.Errorf("Expected IP 192.168.1.11, got %s", allocation.IP)
+		if allocation.NodeName == "node-2" && allocation.IP == "192.168.1.11" {
+			node2Found = true
+			t.Logf("Found preserved node-2 allocation: %s -> %s", allocID, allocation.IP)
 		}
 	}
 
-	// Verify that node-1's IP was returned to available pool
+	if !node1Found {
+		t.Error("Expected node-1 allocation to be preserved")
+	}
+	if !node2Found {
+		t.Error("Expected node-2 allocation to be preserved")
+	}
+
+	// Verify pool status reflects all allocations preserved
 	total, available, inUse, err := manager.GetPoolStatus(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get pool status: %v", err)
 	}
 
 	expectedTotal := 3
-	expectedAvailable := 2 // 192.168.1.10 (released) + 192.168.1.12 (originally available)
-	expectedInUse := 1     // node-2's allocation
+	expectedAvailable := 1 // Only 192.168.1.12 (originally available)
+	expectedInUse := 2     // Both node-1 and node-2 allocations preserved
 
 	if total != expectedTotal {
 		t.Errorf("Expected %d total IPs, got %d", expectedTotal, total)
@@ -130,5 +140,5 @@ func TestNodeSpecificStateRecovery(t *testing.T) {
 		t.Errorf("Expected %d IPs in use, got %d", expectedInUse, inUse)
 	}
 
-	t.Logf("Node-specific recovery test passed: node-1 IP released, node-2 IP preserved")
+	t.Logf("Node-specific recovery test passed: all allocations preserved for peerpod controller cleanup")
 }

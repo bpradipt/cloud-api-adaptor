@@ -129,7 +129,7 @@ func TestConfigMapVMPoolManagerAllocateIP(t *testing.T) {
 
 	// Test allocation
 	allocationID := "test-allocation-1"
-	allocatedIP, err := manager.AllocateIP(ctx, allocationID, "test-pod", "test-namespace")
+	allocatedIP, err := manager.AllocateIP(ctx, allocationID, "test-pod")
 	if err != nil {
 		t.Errorf("Failed to allocate IP: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestConfigMapVMPoolManagerGetAllocatedIP(t *testing.T) {
 
 	// Allocate an IP
 	allocationID := "test-allocation"
-	allocatedIP, err := manager.AllocateIP(ctx, allocationID, "test-pod", "test-namespace")
+	allocatedIP, err := manager.AllocateIP(ctx, allocationID, "test-pod")
 	if err != nil {
 		t.Fatalf("Failed to allocate IP: %v", err)
 	}
@@ -322,13 +322,13 @@ func TestConfigMapVMPoolManagerListAllocatedIPs(t *testing.T) {
 
 	// Allocate two IPs
 	alloc1 := "test-allocation-1"
-	ip1, err := manager.AllocateIP(ctx, alloc1, "test-pod-1", "test-namespace")
+	ip1, err := manager.AllocateIP(ctx, alloc1, "test-pod-1")
 	if err != nil {
 		t.Fatalf("Failed to allocate first IP: %v", err)
 	}
 
 	alloc2 := "test-allocation-2"
-	ip2, err := manager.AllocateIP(ctx, alloc2, "test-pod-2", "test-namespace")
+	ip2, err := manager.AllocateIP(ctx, alloc2, "test-pod-2")
 	if err != nil {
 		t.Fatalf("Failed to allocate second IP: %v", err)
 	}
@@ -432,7 +432,7 @@ func TestConfigMapVMPoolManagerErrorHandling(t *testing.T) {
 	ctx := context.Background()
 
 	// Test allocation failure due to ConfigMap creation error
-	_, err = manager.AllocateIP(ctx, "test-allocation", "test-pod", "test-namespace")
+	_, err = manager.AllocateIP(ctx, "test-allocation", "test-pod")
 	if err == nil {
 		t.Error("Expected error due to ConfigMap creation failure")
 	}
@@ -460,13 +460,13 @@ func TestConfigMapVMPoolManagerDoubleAllocation(t *testing.T) {
 	allocationID := "test-allocation"
 
 	// First allocation should succeed
-	ip1, err := manager.AllocateIP(ctx, allocationID, "test-pod", "test-namespace")
+	ip1, err := manager.AllocateIP(ctx, allocationID, "test-pod")
 	if err != nil {
 		t.Fatalf("First allocation failed: %v", err)
 	}
 
 	// Second allocation with same ID should return same IP
-	ip2, err := manager.AllocateIP(ctx, allocationID, "test-pod", "test-namespace")
+	ip2, err := manager.AllocateIP(ctx, allocationID, "test-pod")
 	if err != nil {
 		t.Errorf("Second allocation failed: %v", err)
 	}

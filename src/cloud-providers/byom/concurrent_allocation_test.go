@@ -83,10 +83,9 @@ func TestConcurrentIPAllocation(t *testing.T) {
 			for j := 0; j < allocationsPerWorker; j++ {
 				allocationID := fmt.Sprintf("worker-%d-alloc-%d", workerID, j)
 				podName := fmt.Sprintf("test-pod-%d-%d", workerID, j)
-				podNamespace := "default"
 
 				// Attempt allocation
-				ip, err := manager.AllocateIP(ctx, allocationID, podName, podNamespace)
+				ip, err := manager.AllocateIP(ctx, allocationID, podName)
 				if err != nil {
 					errorChan <- fmt.Errorf("worker %d allocation %d failed: %w", workerID, j, err)
 				} else {
@@ -204,7 +203,7 @@ func TestConcurrentAllocationAndDeallocation(t *testing.T) {
 	// Pre-allocate some IPs
 	preAllocations := []string{"pre-alloc-1", "pre-alloc-2"}
 	for _, allocID := range preAllocations {
-		_, err := manager.AllocateIP(ctx, allocID, "pre-pod", "default")
+		_, err := manager.AllocateIP(ctx, allocID, "pre-pod")
 		if err != nil {
 			t.Fatalf("Failed to pre-allocate IP: %v", err)
 		}
@@ -228,7 +227,7 @@ func TestConcurrentAllocationAndDeallocation(t *testing.T) {
 				podName := fmt.Sprintf("dynamic-pod-%d-%d", workerID, j)
 
 				// Try allocation
-				ip, err := manager.AllocateIP(ctx, allocationID, podName, "default")
+				ip, err := manager.AllocateIP(ctx, allocationID, podName)
 				if err != nil {
 					errorChan <- fmt.Errorf("worker %d alloc %d failed: %w", workerID, j, err)
 				} else {
@@ -357,7 +356,7 @@ func TestHashBasedIPDistribution(t *testing.T) {
 	allocatedIPs := make(map[string]string) // allocationID -> IP
 
 	for _, tc := range testCases {
-		ip, err := manager.AllocateIP(ctx, tc.allocationID, "test-pod", "default")
+		ip, err := manager.AllocateIP(ctx, tc.allocationID, "test-pod")
 		if err != nil {
 			t.Fatalf("Failed to allocate IP for %s: %v", tc.allocationID, err)
 		}

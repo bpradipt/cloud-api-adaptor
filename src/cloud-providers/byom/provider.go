@@ -125,16 +125,8 @@ func (p *byomProvider) CreateInstance(ctx context.Context, podName, sandboxID st
 	// Generate allocation ID
 	allocationID := fmt.Sprintf("%s-%s", podName, sandboxID)
 
-	// Parse pod name to extract namespace (format: namespace/podname or just podname)
-	podNamespace := "default" // default namespace
-	actualPodName := podName
-	if parts := strings.Split(podName, "/"); len(parts) == 2 {
-		podNamespace = parts[0]
-		actualPodName = parts[1]
-	}
-
 	// Allocate IP from global pool
-	ip, err := p.globalPoolMgr.AllocateIP(ctx, allocationID, actualPodName, podNamespace)
+	ip, err := p.globalPoolMgr.AllocateIP(ctx, allocationID, podName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to allocate IP from pool: %w", err)
 	}
@@ -158,8 +150,8 @@ func (p *byomProvider) CreateInstance(ctx context.Context, podName, sandboxID st
 		return nil, fmt.Errorf("failed to send config to VM %s: %w", ip.String(), err)
 	}
 
-	// Note: No need to update PeerPod CR - it will automatically contain the IP in spec.instanceID
-	// when the instance is created by the hypervisor service
+	// The peerpod CR will contain the IP in spec.instanceID
+	// when the instance is created by the byom provider
 
 	// Create instance object
 	instance := &provider.Instance{

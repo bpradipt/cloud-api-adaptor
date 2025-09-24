@@ -151,25 +151,22 @@ func (cm *ConfigMapVMPoolManager) checkVMReadiness(ctx context.Context, ipStr st
 }
 
 // AllocateIP allocates an IP from the global pool
-func (cm *ConfigMapVMPoolManager) AllocateIP(ctx context.Context, allocationID string, podName, podNamespace string) (netip.Addr, error) {
+func (cm *ConfigMapVMPoolManager) AllocateIP(ctx context.Context, allocationID string, podName string) (netip.Addr, error) {
 	ctx, cancel := context.WithTimeout(ctx, cm.config.OperationTimeout)
 	defer cancel()
 
 	// Direct allocation - retry logic is handled inside updateState
-	allocatedIP, err := cm.doAllocateIP(ctx, allocationID, podName, podNamespace)
+	allocatedIP, err := cm.doAllocateIP(ctx, allocationID, podName)
 	if err != nil {
 		return netip.Addr{}, err
 	}
-
-	// Note: PeerPod CR will automatically contain the IP in spec.instanceID when created
-	// No additional observability update needed here
 
 	logger.Printf("Successfully allocated IP %s to allocation ID %s", allocatedIP.String(), allocationID)
 	return allocatedIP, nil
 }
 
 // doAllocateIP performs the actual allocation with optimistic locking and smart IP selection
-func (cm *ConfigMapVMPoolManager) doAllocateIP(ctx context.Context, allocationID string, podName, podNamespace string) (netip.Addr, error) {
+func (cm *ConfigMapVMPoolManager) doAllocateIP(ctx context.Context, allocationID string, podName string) (netip.Addr, error) {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 
@@ -227,7 +224,6 @@ func (cm *ConfigMapVMPoolManager) doAllocateIP(ctx context.Context, allocationID
 		IP:           ipStr,
 		NodeName:     nodeName,
 		PodName:      podName,
-		PodNamespace: podNamespace,
 		AllocatedAt:  metav1.Now(),
 	}
 
@@ -295,7 +291,7 @@ func (cm *ConfigMapVMPoolManager) doDeallocateIP(ctx context.Context, allocation
 		return fmt.Errorf("%w: %w", ErrUpdatingPoolState, err)
 	}
 
-	logger.Printf("Successfully deallocated IP %s for allocation %s", allocation.IP, allocationID)
+	logger.Printf("Successfully deallocated IP %s", allocation.IP)
 	return nil
 }
 
