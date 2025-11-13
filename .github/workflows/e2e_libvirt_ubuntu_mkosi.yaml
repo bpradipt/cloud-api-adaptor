@@ -1,0 +1,235 @@
+name: Ubuntu mkosi libvirt e2e tests
+# This workflow builds Ubuntu mkosi PodVM images and runs libvirt e2e tests
+# Designed to work on forks using ghcr.io registry by default
+#
+# Required secrets for forks using ghcr.io:
+#   - QUAY_PASSWORD: Required by caa_build_and_push.yaml (can be dummy value if using ghcr.io)
+#   - REGISTRY_CREDENTIAL_ENCODED: Required for e2e tests (can be empty if not testing authenticated registries)
+
+on:
+  workflow_dispatch:
+    inputs:
+      registry:
+        default: 'ghcr.io'
+        description: 'Image registry (e.g. "ghcr.io" or "quay.io/confidential-containers") where the built images will be pushed to'
+        required: false
+        type: string
+      git_ref:
+        description: 'Git ref to checkout the cloud-api-adaptor repository. Defaults to the current branch.'
+        required: false
+        type: string
+        default: ''
+      arch:
+        description: 'Which arch we are building the mkosi image for'
+        default: 'amd64'
+        required: false
+        type: string
+      debug:
+        description: 'Whether to build the image in debug mode'
+        default: false
+        required: false
+        type: boolean
+      secure_comms:
+        default: 'none'
+        description: 'SecureComms configuration. Defaults to none.'
+        required: false
+        type: string
+      container_runtime:
+        default: 'containerd'
+        description: 'Name of the container runtime. Either containerd or crio.'
+        required: false
+        type: string
+  pull_request:
+    branches:
+      - ubuntu-podvm-mkosi
+    paths:
+      - 'src/cloud-api-adaptor/podvm-mkosi/**'
+      - '.github/workflows/e2e_libvirt_ubuntu_mkosi.yaml'
+
+defaults:
+  run:
+    working-directory: src/cloud-api-adaptor
+
+# Note: Permissions are set per job as different jobs have different requirements
+permissions: {}
+
+jobs:
+  # Determine the image tag and registry to use for CAA and PodVM images
+  setup:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      image_tag: ${{ steps.set_tag.outputs.tag }}
+      registry: ${{ steps.set_registry.outputs.registry }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.git_ref || github.ref }}
+
+      - name: Set image tag
+        id: set_tag
+        run: |
+          tag=$(git rev-parse --short HEAD)
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Set registry
+        id: set_registry
+        run: |
+          if [ "${{ inputs.registry }}" = "ghcr.io" ]; then
+            # When using ghcr.io, append the repository owner for fork support
+            echo "registry=ghcr.io/${{ github.repository_owner }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "registry=${{ inputs.registry }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-caa-image:
+    needs: setup
+    uses: ./.github/workflows/caa_build_and_push.yaml
+    with:
+      registry: ${{ needs.setup.outputs.registry }}
+      dev_arches: 'linux/amd64'
+      release_arches: 'linux/amd64'
+      dev_tags: ${{ needs.setup.outputs.image_tag }}-dev
+      release_tags: ${{ needs.setup.outputs.image_tag }}
+      git_ref: ${{ inputs.git_ref || github.ref }}
+    permissions:
+      contents: read
+      packages: write
+    secrets:
+      QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+
+  build-ubuntu-mkosi-image:
+    needs: setup
+    name: Build Ubuntu mkosi image
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      podvm_image: ${{ steps.publish_oras.outputs.image }}:${{ steps.publish_oras.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.git_ref || github.ref }}
+
+      - name: Rebase the code
+        if: github.event_name == 'pull_request_target'
+        working-directory: ./
+        run: |
+          ./hack/ci-helper.sh rebase-atop-of-the-latest-target-branch
+
+      # Required by rootless mkosi
+      - name: Un-restrict user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Login to ghcr Container Registry
+        if: ${{ startsWith(needs.setup.outputs.registry, 'ghcr.io') }}
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to quay Container Registry
+        if: ${{ startsWith(needs.setup.outputs.registry, 'quay.io') }}
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: quay.io
+          username: ${{ vars.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            alien \
+            bubblewrap \
+            dnf \
+            qemu-utils \
+            uidmap
+          sudo snap install yq
+
+      - name: Read properties from versions.yaml
+        run: |
+          echo "MKOSI_VERSION=$(yq -e '.tools.mkosi' versions.yaml)" >> "$GITHUB_ENV"
+          echo "ORAS_VERSION=$(yq -e '.tools.oras' versions.yaml)" >> "$GITHUB_ENV"
+
+      - uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1.2.4
+        with:
+          version: ${{ env.ORAS_VERSION }}
+
+      - name: Build binaries for Ubuntu
+        working-directory: src/cloud-api-adaptor/podvm-mkosi
+        run: make binaries
+        env:
+          ARCH: ${{ inputs.arch }}
+          PODVM_DISTRO: ubuntu
+
+      - name: Build mkosi debug image
+        if: ${{ inputs.debug == true }}
+        working-directory: src/cloud-api-adaptor/podvm-mkosi
+        run: make image-debug
+        env:
+          PODVM_DISTRO: ubuntu
+
+      - name: Build mkosi image
+        if: ${{ inputs.debug != true }}
+        working-directory: src/cloud-api-adaptor/podvm-mkosi
+        run: make image
+        env:
+          PODVM_DISTRO: ubuntu
+
+      - name: Upload the qcow2 with oras
+        id: publish_oras
+        working-directory: src/cloud-api-adaptor/podvm-mkosi
+        run: |
+          mkdir oras
+          cd oras
+          cp ../build/podvm-*.qcow2 .
+          tar cJf podvm.tar.xz podvm-*.qcow2
+          image=${{ needs.setup.outputs.registry }}/podvm-generic-ubuntu
+          if [ "${{ inputs.debug }}" = "true" ]; then
+            image=${image}-debug
+          fi
+          image=${image}-${{ inputs.arch }}
+          tag=${{ needs.setup.outputs.image_tag }}
+          oras push "${image}:${tag}" podvm.tar.xz
+
+          # add image and digest to output
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          digest="$(oras manifest fetch "${image}:${tag}" --descriptor | jq -r .digest)"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-name: ${{ steps.publish_oras.outputs.image }}
+          subject-digest: ${{ steps.publish_oras.outputs.digest }}
+          push-to-registry: true
+
+  run-e2e-tests:
+    name: Run libvirt e2e tests
+    needs: [setup, build-caa-image, build-ubuntu-mkosi-image]
+    uses: ./.github/workflows/e2e_libvirt.yaml
+    with:
+      runner: 'ubuntu-24.04'
+      podvm_image: ${{ needs.build-ubuntu-mkosi-image.outputs.podvm_image }}
+      caa_image: ${{ needs.setup.outputs.registry }}/cloud-api-adaptor:${{ needs.setup.outputs.image_tag }}-dev
+      git_ref: ${{ inputs.git_ref || github.ref }}
+      secure_comms: ${{ inputs.secure_comms }}
+      oras: true
+      container_runtime: ${{ inputs.container_runtime }}
+    secrets:
+      REGISTRY_CREDENTIAL_ENCODED: ${{ secrets.REGISTRY_CREDENTIAL_ENCODED }}
