@@ -19,6 +19,7 @@ import (
 	"github.com/confidential-containers/cloud-api-adaptor/src/cloud-api-adaptor/pkg/adaptor/proxy"
 	"github.com/confidential-containers/cloud-api-adaptor/src/cloud-api-adaptor/pkg/adaptor/vminfo"
 	"github.com/confidential-containers/cloud-api-adaptor/src/cloud-api-adaptor/pkg/podnetwork"
+	"github.com/confidential-containers/cloud-api-adaptor/src/cloud-api-adaptor/pkg/util/tlsutil"
 	pbPodVMInfo "github.com/confidential-containers/cloud-api-adaptor/src/cloud-api-adaptor/proto/podvminfo"
 	provider "github.com/confidential-containers/cloud-api-adaptor/src/cloud-providers"
 )
@@ -49,11 +50,31 @@ type server struct {
 	PeerPodsLimitPerNode    int
 }
 
+// buildAgentFactory constructs a proxy.Factory, using persistent TLS material
+// from cfg.TLSMaterialPath when configured, and falling back to generating
+// ephemeral material otherwise.
+func buildAgentFactory(cfg *cloud.ServerConfig) proxy.Factory {
+	if cfg.TLSConfig != nil && cfg.TLSMaterialPath != "" {
+		caService, clientCertPEM, clientKeyPEM, err := tlsutil.LoadOrCreateTLSMaterial(cfg.TLSMaterialPath)
+		if err != nil {
+			logger.Printf("failed to load/create TLS material from %s, falling back to ephemeral: %v",
+				cfg.TLSMaterialPath, err)
+		} else {
+			cfg.TLSConfig.CertData = clientCertPEM
+			cfg.TLSConfig.KeyData = clientKeyPEM
+			cfg.TLSConfig.CAData = caService.RootCertificate()
+			logger.Printf("using persistent TLS material from %s", cfg.TLSMaterialPath)
+			return proxy.NewFactoryWithCAService(cfg.PauseImage, cfg.TLSConfig, cfg.ProxyTimeout, caService)
+		}
+	}
+	return proxy.NewFactory(cfg.PauseImage, cfg.TLSConfig, cfg.ProxyTimeout)
+}
+
 func NewServer(provider provider.Provider, cfg *cloud.ServerConfig, workerNode podnetwork.WorkerNode) Server {
 
 	logger.Printf("server config: %#v", cfg)
 
-	agentFactory := proxy.NewFactory(cfg.PauseImage, cfg.TLSConfig, cfg.ProxyTimeout)
+	agentFactory := buildAgentFactory(cfg)
 	cloudService := cloud.NewService(provider, agentFactory, workerNode, cfg)
 	vmInfoService := vminfo.NewService(cloudService)
 
@@ -82,6 +103,10 @@ func (s *server) Start(ctx context.Context) (err error) {
 		if err != nil {
 			return err
 		}
+	}
+
+	if err := s.cloudService.Restore(ctx); err != nil {
+		logger.Printf("failed to restore sandboxes: %v", err)
 	}
 
 	ttRPC, err := ttrpc.NewServer()

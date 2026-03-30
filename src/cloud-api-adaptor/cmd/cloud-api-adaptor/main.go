@@ -114,6 +114,7 @@ func (cfg *daemonConfig) Setup() (cmd.Starter, error) {
 		reg.BoolWithEnv(&cfg.serverConfig.EnableScratchSpace, "enable-scratch-space", false, "ENABLE_SCRATCH_SPACE", "Enable encrypted scratch space for pod VMs")
 		reg.BoolWithEnv(&cfg.networkConfig.ExternalNetViaPodVM, "ext-network-via-podvm", false, "EXTERNAL_NETWORK_VIA_PODVM", "[EXPERIMENTAL] Enable external networking via pod VM")
 		reg.CustomTypeWithEnv(&cfg.networkConfig.PodSubnetCIDRs, "pod-subnet-cidrs", "", "POD_SUBNET_CIDRS", "[EXPERIMENTAL] Comma separated CIDRs for local pod subnets")
+		reg.StringWithEnv(&cfg.serverConfig.TLSMaterialPath, "tls-material-path", "/run/peerpod/tls-material.json", "TLS_MATERIAL_PATH", "Path to persist TLS CA and client certificate material across CAA restarts (tmpfs is fine)")
 
 		// Flags without environment variable support
 		flags.BoolVar(&disableTLS, "disable-tls", false, "Disable TLS encryption - use it only for testing")
