@@ -21,6 +21,7 @@ type Service interface {
 	GetInstanceID(ctx context.Context, podNamespace, podName string, wait bool) (string, error)
 	ConfigVerifier() error
 	Teardown() error
+	Restore(ctx context.Context) error
 }
 
 type cloudService struct {
@@ -47,4 +48,5 @@ type sandbox struct {
 	instanceID   string
 	netNSPath    string
 	spec         provider.InstanceTypeSpec
+	restored     bool
 }

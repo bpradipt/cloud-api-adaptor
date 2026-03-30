@@ -47,6 +47,13 @@ type ServerConfig struct {
 	PeerPodsLimitPerNode    int
 	RootVolumeSize          int
 	EnableScratchSpace      bool
+	// TLSMaterialPath is the path where TLS CA and client certificate material
+	// is persisted across CAA process restarts. Must be on a filesystem that
+	// survives process restarts but not necessarily node reboots (tmpfs is fine).
+	// When non-empty and TLSConfig is non-nil, existing material is loaded from
+	// this path on startup rather than generating new ephemeral certificates.
+	// Recommended: /run/peerpod/tls-material.json
+	TLSMaterialPath string
 }
 
 var logger = log.New(log.Writer(), "[adaptor/cloud] ", log.LstdFlags|log.Lmsgprefix)
@@ -173,6 +180,17 @@ func (s *cloudService) CreateVM(ctx context.Context, req *pb.CreateVMRequest) (r
 	if sid == "" {
 		return nil, fmt.Errorf("empty sandbox id")
 	}
+
+	// Idempotent: if the sandbox was restored after a CAA restart, return the
+	// existing agent socket path instead of creating a new VM.
+	s.mutex.Lock()
+	if existing, ok := s.sandboxes[sid]; ok && existing.restored {
+		socketPath := filepath.Join(s.serverConfig.PodsDir, string(sid), proxy.SocketName)
+		s.mutex.Unlock()
+		logger.Printf("sandbox %s already restored, returning existing agent socket", sid)
+		return &pb.CreateVMResponse{AgentSocketPath: socketPath}, nil
+	}
+	s.mutex.Unlock()
 
 	pod := util.GetPodName(req.Annotations)
 	if pod == "" {
@@ -341,6 +359,15 @@ func (s *cloudService) StartVM(ctx context.Context, req *pb.StartVMRequest) (res
 		return nil, fmt.Errorf("getting sandbox: %w", err)
 	}
 
+	// Idempotent: restored sandboxes have cloudConfig and spec as nil/zero — they
+	// are not persisted in state.json since CreateInstance (the only consumer) is
+	// skipped for restored sandboxes. Do not remove this guard without ensuring
+	// those fields are populated in restore.go first.
+	if sandbox.restored {
+		logger.Printf("sandbox %s is already running (restored), skipping StartVM", sid)
+		return &pb.StartVMResponse{}, nil
+	}
+
 	instance, err := s.provider.CreateInstance(ctx, sandbox.podName, string(sid), sandbox.cloudConfig, sandbox.spec)
 
 	// Cleanup instance if it was created but an error occurred (either during creation or later)
@@ -384,6 +411,20 @@ func (s *cloudService) StartVM(ctx context.Context, req *pb.StartVMRequest) (res
 
 	if err := s.workerNode.Setup(sandbox.netNSPath, instance.IPs, sandbox.podNetwork); err != nil {
 		return nil, fmt.Errorf("setting up pod network tunnel on netns %s: %w", sandbox.netNSPath, err)
+	}
+
+	state := &sandboxState{
+		SandboxID:    string(sid),
+		InstanceID:   instance.ID,
+		InstanceName: instance.Name,
+		InstanceIPs:  instance.IPs,
+		PodName:      sandbox.podName,
+		PodNamespace: sandbox.podNamespace,
+		NetNSPath:    sandbox.netNSPath,
+		PodNetwork:   sandbox.podNetwork,
+	}
+	if err := writeSandboxState(s.serverConfig.PodsDir, state); err != nil {
+		logger.Printf("failed to persist sandbox state for %s: %v", sid, err)
 	}
 
 	serverURL := &url.URL{
@@ -436,9 +477,15 @@ func (s *cloudService) StopVM(ctx context.Context, req *pb.StopVMRequest) (*pb.S
 
 	if err := s.provider.DeleteInstance(ctx, sandbox.instanceID); err != nil {
 		logger.Printf("Error deleting an instance %s: %v", sandbox.instanceID, err)
-	} else if s.ppService != nil {
-		if err := s.ppService.ReleasePeerPod(sandbox.podName, sandbox.podNamespace, sandbox.instanceID); err != nil {
-			logger.Printf("failed to release PeerPod %v", err)
+		// state.json intentionally left: allows recovery on next CAA restart
+		// if the deletion was transient. The PeerPod controller handles eventual
+		// cloud resource cleanup.
+	} else {
+		deleteSandboxState(s.serverConfig.PodsDir, string(sid))
+		if s.ppService != nil {
+			if err := s.ppService.ReleasePeerPod(sandbox.podName, sandbox.podNamespace, sandbox.instanceID); err != nil {
+				logger.Printf("failed to release PeerPod %v", err)
+			}
 		}
 	}
 
