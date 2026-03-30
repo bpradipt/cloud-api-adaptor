@@ -10,10 +10,13 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -233,4 +236,67 @@ func generateCertificate(orgName, serverName string, parentCertPEM, parentKeyPEM
 	}
 
 	return certPEM, keyPEM, nil
+}
+
+// tlsMaterial is the JSON schema used to persist TLS material on disk.
+type tlsMaterial struct {
+	CACertPEM    []byte `json:"ca_cert_pem"`
+	CAKeyPEM     []byte `json:"ca_key_pem"`
+	ClientCertPEM []byte `json:"client_cert_pem"`
+	ClientKeyPEM  []byte `json:"client_key_pem"`
+}
+
+// LoadOrCreateTLSMaterial loads persisted TLS material from path, or generates
+// fresh material and persists it to path when none exists yet. The returned
+// CAService can be used to issue per-pod-VM server certificates. clientCertPEM
+// and clientKeyPEM are the client-side credentials that CAA presents to the
+// agent-protocol-forwarder.
+func LoadOrCreateTLSMaterial(path string) (result CAService, clientCertPEM, clientKeyPEM []byte, err error) {
+	// Attempt to load existing material.
+	if data, readErr := os.ReadFile(path); readErr == nil {
+		var mat tlsMaterial
+		if jsonErr := json.Unmarshal(data, &mat); jsonErr == nil &&
+			len(mat.CACertPEM) > 0 && len(mat.CAKeyPEM) > 0 &&
+			len(mat.ClientCertPEM) > 0 && len(mat.ClientKeyPEM) > 0 {
+			svc := &caService{
+				orgName: "agent-protocol-forwarder",
+				certPEM: mat.CACertPEM,
+				keyPEM:  mat.CAKeyPEM,
+			}
+			return svc, mat.ClientCertPEM, mat.ClientKeyPEM, nil
+		}
+	}
+
+	// Generate new material.
+	svc, err := NewCAService("agent-protocol-forwarder")
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("generating CA: %w", err)
+	}
+
+	clientCertPEM, clientKeyPEM, err = NewClientCertificate("cloud-api-adaptor")
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("generating client certificate: %w", err)
+	}
+
+	// Persist so subsequent restarts reuse the same material.
+	inner := svc.(*caService)
+	mat := tlsMaterial{
+		CACertPEM:     inner.certPEM,
+		CAKeyPEM:      inner.keyPEM,
+		ClientCertPEM: clientCertPEM,
+		ClientKeyPEM:  clientKeyPEM,
+	}
+	data, err := json.Marshal(mat)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("marshalling TLS material: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, nil, nil, fmt.Errorf("creating TLS material directory: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		// Non-fatal: material is still usable for this process lifetime.
+		_ = err
+	}
+
+	return svc, clientCertPEM, clientKeyPEM, nil
 }
