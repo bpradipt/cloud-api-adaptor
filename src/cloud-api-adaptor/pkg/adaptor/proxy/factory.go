@@ -52,6 +52,21 @@ func NewFactory(pauseImage string, tlsConfig *tlsutil.TLSConfig, proxyTimeout ti
 	}
 }
 
+// NewFactoryWithCAService creates a Factory using pre-built TLS material.
+// Use this when TLS material has been loaded from persistent storage (e.g.
+// after a CAA restart) to ensure the same CA and client certificate are reused
+// across process restarts. tlsConfig must already have CertData, KeyData, and
+// CAData populated. caService must be able to issue server certificates for
+// peer pod VMs.
+func NewFactoryWithCAService(pauseImage string, tlsConfig *tlsutil.TLSConfig, proxyTimeout time.Duration, caService tlsutil.CAService) Factory {
+	return &factory{
+		pauseImage:   pauseImage,
+		tlsConfig:    tlsConfig,
+		caService:    caService,
+		proxyTimeout: proxyTimeout,
+	}
+}
+
 func (f *factory) New(serverName, socketPath string) AgentProxy {
 
 	return NewAgentProxy(serverName, socketPath, f.pauseImage, f.tlsConfig, f.caService, f.proxyTimeout)
