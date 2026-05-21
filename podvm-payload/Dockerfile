@@ -49,14 +49,14 @@ USER root
 # If you are running a UBI container on a registered and subscribed RHEL host, 
 # the main RHEL Server repository is enabled inside the standard UBI container.
 # Uncomment this and provide the associated secrets to register.
-#RUN --mount=type=secret,id=org_id --mount=type=secret,id=activation_key if [[ -f /run/secrets/org_id && -f /run/secrets/activation_key ]]; then \
-#      REPO_ARCH=$(uname -m) && \
-#      subscription-manager register --org "$(cat /run/secrets/org_id)" --activationkey "$(cat /run/secrets/activation_key)" && \
-#      subscription-manager repos --enable rhel-10-for-${REPO_ARCH}-appstream-rpms --enable codeready-builder-for-rhel-10-${REPO_ARCH}-rpms; \
-#    fi
+RUN --mount=type=secret,id=org_id --mount=type=secret,id=activation_key if [[ -f /run/secrets/org_id && -f /run/secrets/activation_key ]]; then \
+      REPO_ARCH=$(uname -m) && \
+      subscription-manager register --org "$(cat /run/secrets/org_id)" --activationkey "$(cat /run/secrets/activation_key)" && \
+      subscription-manager repos --enable rhel-10-for-${REPO_ARCH}-appstream-rpms --enable codeready-builder-for-rhel-10-${REPO_ARCH}-rpms; \
+    fi
 # Uncomment the following line for hermetic build
 #RUN rm /etc/yum.repos.d/* && cp /cachi2/output/deps/rpm/$(uname -m)/repos.d/cachi2.repo /etc/yum.repos.d/ && dnf update
-RUN dnf clean packages && dnf install -y git rust cargo perl-File-Compare perl-FindBin cmake gcc-c++ perl protobuf-compiler clang-devel device-mapper-devel tpm2-tss-devel
+RUN dnf clean packages && dnf install -y git rust cargo perl-File-Compare perl-FindBin cmake gcc-c++ perl protobuf-compiler clang-devel device-mapper-devel tpm2-tss-devel libxml2-devel
 
 RUN mkdir -p /artifacts/usr/local/bin
 
@@ -67,12 +67,20 @@ COPY podvm-payload/guest-components /workdir/guest-components
 WORKDIR /workdir/kata-containers/src/agent
 RUN make src/version.rs
 RUN RUST_MIN_STACK=16777216 cargo build --verbose --release --features "agent-policy init-data"
-RUN cp /workdir/kata-containers/src/agent/target/release/kata-agent /artifacts/usr/local/bin
+RUN cp /workdir/kata-containers/target/release/kata-agent /artifacts/usr/local/bin
 
 # binary: attestation-agent (rust)
 WORKDIR /workdir/guest-components/attestation-agent/attestation-agent
 # Use openssl from OS instead of rebuilding from source
 ENV OPENSSL_NO_VENDOR=1
+# Pre-fetch cargo deps to get the NVIDIA attestation SDK source, then build its
+# C++ component (required by nv-attestation-sdk-sys build.rs before cargo build)
+RUN cargo fetch
+RUN NVAT_CPP=$(find /root/.cargo/git/checkouts -maxdepth 4 -type d -name "nv-attestation-sdk-cpp" | head -1) && \
+    sed -i 's/xmlErrorPtr xml_error = xmlGetLastError();/const xmlError* xml_error = xmlGetLastError();/' \
+        "$NVAT_CPP/src/rim.cpp" && \
+    cmake -S "$NVAT_CPP" -B "$NVAT_CPP/build" -DBUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF && \
+    cmake --build "$NVAT_CPP/build" -j$(nproc)
 RUN ARCH=$(uname -m) && \
   if [ "$ARCH" = "s390x" ]; then \
         cargo build --verbose --release --no-default-features --features "coco_as,kbs,se-attester,bin,ttrpc,openssl"; \
