@@ -10,7 +10,11 @@ image:
   tag: "f5dd0b2657a76482c6acabe0285cc87eb5d49473-dev"
 
 providerConfigs:
-  libvirt: {}
+  libvirt:
+    LIBVIRT_URI: "qemu+ssh://root@192.168.123.1/system?no_verify=1"
+    LIBVIRT_POOL: "podvm-bench"
+    LIBVIRT_VOL_NAME: "podvm-ubuntu-amd64.qcow2"
+    DISABLECVM: "true"
     # CA certificate file for custom TLS (e.g. /etc/certificates/ca.crt)
     # (default: "")
     # CACERT_FILE: ""
