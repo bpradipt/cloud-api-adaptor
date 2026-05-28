@@ -1,0 +1,15 @@
+[Unit]
+Description=Mount embedded container image store
+Documentation=https://github.com/confidential-containers/cloud-api-adaptor
+ConditionPathExists=/dev/disk/by-label/embedded_image
+After=systemd-repart.service local-fs.target
+Before=kata-agent.service
+
+[Mount]
+What=/dev/disk/by-label/embedded_image
+Where=/run/kata-containers/image
+Type=ext4
+Options=rw,relatime
+
+[Install]
+WantedBy=multi-user.target
