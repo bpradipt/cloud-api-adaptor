@@ -4,7 +4,7 @@
 **Branch:** embedded
 **Image Attempted:** quay.io/bpradipt/cuda-samples:ubi9 (3.96 GB Docker manifest v2)
 **Provider:** libvirt (local, qemu:///system)
-**Clusters:** (1) kubeadm k8s v1.31.14 (runs 1-2), (2) kcli peer-pods k8s v1.30.0 (run 3)
+**Clusters:** (1) kubeadm k8s v1.31.14 (runs 1-2), (2) kcli peer-pods k8s v1.30.0 (runs 3-4)
 
 ---
 
@@ -268,16 +268,108 @@ the embedded image with ubuntu:22.04 pre-cached, OR use cuda-samples in OCI form
 | 1 | kubeadm v1.31.14 | cuda-samples:ubi9 | FAIL | FAIL (wrong paths) | N/A |
 | 2 | kubeadm v1.31.14 | cuda-samples:ubi9 | FAIL (~15s CDH fail) | FAIL (~51-56s CDH fail) | +35-40s CDH read delay |
 | 3 | kcli v1.30.0 | ubuntu:22.04 (fallback) | 31,543 ms | 29,343 ms | -2,200 ms (noise) |
+| 4 | kcli v1.30.0 | ubuntu:22.04 (fallback) | 53,417 ms | 51,809 ms | -1,608 ms (noise) |
 
 Run 2's +35-40s extra delay in embedded trials is the strongest evidence of embedded
 cache interaction (CDH reads meta_store before failing).
 
 ---
 
+## Run 4 Benchmark Trials (2026-05-28 ~19:10-19:55 UTC)
+
+**Cluster:** kcli peer-pods cluster (k8s v1.30.0, peer-pods-worker-0), kata-remote via CAA
+**Image attempted:** quay.io/bpradipt/cuda-samples:ubi9-oci (OCI format, ~3.6 GB)
+**Embedded partition:** re-built with ubi9-oci image (14 layers, 7.2 GB on disk)
+**Fallback image:** docker.io/library/ubuntu:22.04 (same as run 3)
+
+### Infrastructure Issues Diagnosed and Fixed in This Run
+
+1. **Stale CAA process holding socket**: After a `kubectl rollout restart`, the old CAA process
+   (from a previous session still running as PID 317116) held the `hypervisor.sock` open via fd 10.
+   The new CAA pods were calling `os.RemoveAll(socketPath)` which unlinked the file, then creating
+   a new socket, but the old process was ALSO calling RemoveAll on startup, creating a race that
+   resulted in the socket file being unlinked. Fix: kill the lingering old process explicitly
+   (`sudo kill <old-pid>`) after which the new CAA's socket persists normally.
+
+2. **Wrong pool for libvirt volumes**: The embedded and generic qcow2 files are in the `podvm-bench`
+   pool, but the ConfigMap still referenced `podvm-base.qcow2` (which is in the `default` pool).
+   Fixed to use `podvm-ubuntu-amd64.qcow2` for generic and `podvm-ubuntu-amd64-embedded.qcow2`
+   for embedded trials.
+
+3. **kata.peerpods.io/vm extended resource not appearing**: The CAA's `AdvertiseExtendedResources`
+   call patches the node status successfully but the resource doesn't show in `kubectl get node`.
+   Worked around by patching via `kubectl proxy` + curl. Cause: same underlying issue as run 3
+   (the kubelet overrides the status periodically and doesn't persist extended resources set via
+   the apiserver status subresource when not using the device plugin approach).
+
+### ubi9-oci CDH Failure Analysis
+
+The `ubi9-oci` image was created via `skopeo copy --format oci docker://... docker://...`.
+Despite the OCI manifest format, the layer tarballs still contain character device files (major:minor
+0:0) as whiteout markers. When `image_pull_debug` unpacks these layers into the embedded partition
+(running with `--privileged`, so it has CAP_MKNOD), it creates the character device files on disk.
+When CDH inside the kata VM tries to pull the image from the network (generic VM) or mount the
+pre-populated layers (embedded VM), it hits the same mknod error:
+
+```
+[CDH] [ERROR]: Image Pull error: Failed to pull image quay.io/bpradipt/cuda-samples:ubi9-oci
+error: Failed to decode layer data stream: Failed to unpack layer: Failed to unpack layer to destination
+```
+
+**Root cause**: `skopeo copy --format oci` converts the OCI manifest but does NOT convert layer
+content whiteout representation. The layer tarballs still use character device (0,0) whiteouts.
+To fix, the layers themselves must be rewritten with `.wh.` prefix whiteouts using tools like
+`umoci` or `buildah`. This is a separate conversion step from manifest format conversion.
+
+**Evidence**: 33 character device files (device type 0,0) found in embedded layer 3:
+`/run/kata-containers/image/layers/3/etc/pki/ca-trust/extracted/pem/directory-hash/*.pem`
+
+### Generic Image Trials (podvm-ubuntu-amd64.qcow2 + ubuntu:22.04)
+
+| Trial | Time (ms) | Outcome |
+|-------|-----------|---------|
+| G1 | 57,513 | SUCCESS |
+| G2 | 53,417 | SUCCESS |
+| G3 | 52,100 | SUCCESS |
+
+**Median generic (ubuntu:22.04):** 53,417 ms
+
+### Embedded Image Trials (podvm-ubuntu-amd64-embedded.qcow2 + ubuntu:22.04)
+
+| Trial | Time (ms) | Outcome |
+|-------|-----------|---------|
+| E1 | 51,809 | SUCCESS |
+| E2 | 50,816 | SUCCESS |
+| E3 | 53,051 | SUCCESS |
+
+**Median embedded (ubuntu:22.04):** 51,809 ms
+
+### Run 4 Summary
+
+| Metric | Value |
+|--------|-------|
+| Generic median (ubuntu:22.04) | 53,417 ms |
+| Embedded median (ubuntu:22.04) | 51,809 ms |
+| Delta | -1,608 ms (embedded slightly faster, within noise) |
+| Cache hit evidence | NONE — ubuntu:22.04 not in embedded partition |
+| ubi9-oci result | FAIL — same CDH char-dev whiteout error (skopeo --format oci insufficient) |
+
+**Why delta is within noise:** Same explanation as run 3. Both VMs boot in ~50s using
+network pull of ubuntu:22.04 (which is not in the embedded partition). The embedded VM's
+larger disk (9.96 GiB) doesn't slow boot because the ext4 embedded partition (p4) is only
+mounted by the systemd unit and not read at boot time.
+
+**Next steps to demonstrate cache hit:** Convert the image using `umoci` or `buildah` to
+rewrite layer tarballs with `.wh.` prefix whiteouts, or use a smaller OCI-format image
+that doesn't have layers with character device whiteouts and embed it instead of/alongside
+cuda-samples.
+
+---
+
 ## Configuration Used
 
 ```
-CAA ConfigMap (peer-pods-cm) - Run 3:
+CAA ConfigMap (peer-pods-cm) - Run 3/4:
   CLOUD_PROVIDER: libvirt
   DISABLECVM: "true"
   LIBVIRT_POOL: podvm-bench
