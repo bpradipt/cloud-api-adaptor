@@ -8,3 +8,6 @@ uplosi.conf.d
 uplosi.conf
 resources/*
 mkosi.presets/**/*-extra.conf
+# Embedded container image store (downloaded by 'make download-embedded-image')
+# Already covered by resources/* above, but listed explicitly for clarity
+resources/embedded-image/

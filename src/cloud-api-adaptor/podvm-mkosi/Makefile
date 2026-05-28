@@ -15,6 +15,9 @@ PODVM_CONTAINER_NAME ?= $(REGISTRY)/podvm-docker-image-$(DISTRO_ARCH)
 PODVM_BYOM_E2E_CONTAINER_NAME ?= $(REGISTRY)/podvm-byom-e2e-image-$(DISTRO_ARCH)
 VERIFY_PROVENANCE ?= no
 MKOSI_VERSION ?= v26
+EMBEDDED_IMAGE ?= quay.io/bpradipt/cuda-samples:ubi9
+EMBEDDED_IMAGE_STORE ?= $(shell pwd)/resources/embedded-image
+TOOLS_IMAGE ?= quay.io/bpradipt/kata-initrd-debug-tools:latest
 
 _SHA := $(shell git rev-parse --short HEAD)
 _SHA_DIRTY := $(shell [ -n "$$(git status --porcelain 2>/dev/null)" ] && printf -- '-dirty')
@@ -222,3 +225,28 @@ PHONY: clean
 clean:
 	rm -rf ./build
 	rm -rf ./resources/binaries-tree
+
+.PHONY: download-embedded-image
+download-embedded-image:
+	@echo "Downloading and unpacking embedded container image: $(EMBEDDED_IMAGE)"
+	mkdir -p $(EMBEDDED_IMAGE_STORE)
+	docker run --rm \
+		-v $(EMBEDDED_IMAGE_STORE):/output \
+		$(TOOLS_IMAGE) \
+		/tools/image_pull_debug \
+			--image $(EMBEDDED_IMAGE) \
+			--work-dir /output
+	@echo "Image store written to: $(EMBEDDED_IMAGE_STORE)"
+
+.PHONY: image-embedded
+image-embedded: image
+	@echo "Building embedded image..."
+	@if [ ! -d "$(EMBEDDED_IMAGE_STORE)" ] || [ -z "$$(ls -A $(EMBEDDED_IMAGE_STORE) 2>/dev/null)" ]; then \
+		echo "ERROR: $(EMBEDDED_IMAGE_STORE) is empty. Run 'make download-embedded-image' first."; \
+		exit 1; \
+	fi
+	sudo $(shell pwd)/hack/embed-image.sh \
+		$(shell pwd)/build/system.raw \
+		$(EMBEDDED_IMAGE_STORE) \
+		$(shell pwd)/build/podvm-$(PODVM_DISTRO)-$(DISTRO_ARCH)-embedded.qcow2
+	@echo "Embedded image: build/podvm-$(PODVM_DISTRO)-$(DISTRO_ARCH)-embedded.qcow2"
