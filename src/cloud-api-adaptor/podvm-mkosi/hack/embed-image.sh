@@ -24,6 +24,23 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+LOOP_DEV=""
+MOUNT_POINT=""
+
+cleanup() {
+    local exit_code=$?
+    if [ -n "$MOUNT_POINT" ] && mountpoint -q "$MOUNT_POINT" 2>/dev/null; then
+        umount "$MOUNT_POINT" || true
+    fi
+    [ -n "$MOUNT_POINT" ] && rmdir "$MOUNT_POINT" 2>/dev/null || true
+    [ -n "$LOOP_DEV" ] && losetup -d "$LOOP_DEV" 2>/dev/null || true
+    # Clean up working copy on failure (success path already has rm -f)
+    if [ $exit_code -ne 0 ]; then
+        rm -f "$WORK_IMAGE" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+
 # Work on a copy so system.raw remains usable for the generic qcow2
 WORK_IMAGE="${RAW_IMAGE%.raw}-embedded.raw"
 echo "Copying $RAW_IMAGE -> $WORK_IMAGE ..."
@@ -43,7 +60,7 @@ NEW_BYTES=$(( CURRENT_BYTES + PARTITION_SIZE_MB * 1024 * 1024 ))
 fallocate -l "$NEW_BYTES" "$WORK_IMAGE"
 
 # Append a new GPT partition using all newly added space
-echo "type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=embedded_image" \
+echo "size=${PARTITION_SIZE_MB}MiB, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name=embedded_image" \
     | sfdisk --append "$WORK_IMAGE"
 
 # Attach as loop device with partition scanning
@@ -54,13 +71,18 @@ echo "Attached as $LOOP_DEV"
 udevadm settle || sleep 2
 
 # Discover the new (last) partition (-r for raw output without tree characters)
-PART_NUM=$(lsblk -rno NAME "$LOOP_DEV" | grep -c "^$(basename "$LOOP_DEV")p")
+PART_NUM=$(lsblk -rno NAME "$LOOP_DEV" | grep "^$(basename "$LOOP_DEV")p" | tail -1 | grep -o '[0-9]*$')
 PARTITION="${LOOP_DEV}p${PART_NUM}"
 
 if [ ! -b "$PARTITION" ]; then
     # Force kernel re-read
     partprobe "$LOOP_DEV"
     udevadm settle || sleep 2
+fi
+
+if [ ! -b "$PARTITION" ]; then
+    echo "ERROR: partition device not found after partprobe: $PARTITION" >&2
+    exit 1
 fi
 
 echo "Formatting $PARTITION as ext4 with label embedded_image ..."
