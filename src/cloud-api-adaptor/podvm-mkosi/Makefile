@@ -225,12 +225,15 @@ PHONY: clean
 clean:
 	rm -rf ./build
 	rm -rf ./resources/binaries-tree
+	sudo rm -rf $(EMBEDDED_IMAGE_STORE)
 
 .PHONY: download-embedded-image
 download-embedded-image:
 	@echo "Downloading and unpacking embedded container image: $(EMBEDDED_IMAGE)"
-	rm -rf $(EMBEDDED_IMAGE_STORE)
+	sudo rm -rf $(EMBEDDED_IMAGE_STORE)
 	mkdir -p $(EMBEDDED_IMAGE_STORE)
+	@# --privileged is required: image_pull_debug needs CAP_MKNOD to create whiteout
+	@# character devices (major:minor 0:0) during OCI layer unpack
 	docker run --rm --privileged \
 		-v "$(EMBEDDED_IMAGE_STORE):/output" \
 		$(TOOLS_IMAGE) \
