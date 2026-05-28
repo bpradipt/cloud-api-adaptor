@@ -231,7 +231,7 @@ download-embedded-image:
 	@echo "Downloading and unpacking embedded container image: $(EMBEDDED_IMAGE)"
 	rm -rf $(EMBEDDED_IMAGE_STORE)
 	mkdir -p $(EMBEDDED_IMAGE_STORE)
-	docker run --rm \
+	docker run --rm --privileged \
 		-v "$(EMBEDDED_IMAGE_STORE):/output" \
 		$(TOOLS_IMAGE) \
 		/tools/image_pull_debug \

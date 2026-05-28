@@ -1,0 +1,3 @@
+# Exclude the embedded image store — it is only consumed by hack/embed-image.sh
+# after the mkosi build, not by the Dockerfile itself.
+resources/embedded-image

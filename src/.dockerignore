@@ -1,0 +1,4 @@
+# Exclude the embedded image store — it is only consumed by hack/embed-image.sh
+# after the mkosi build. The root-owned overlay files cause permission errors
+# when Docker tries to send them as build context.
+cloud-api-adaptor/podvm-mkosi/resources/embedded-image
