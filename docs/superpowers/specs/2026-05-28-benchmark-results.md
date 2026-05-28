@@ -4,7 +4,7 @@
 **Branch:** embedded
 **Image Attempted:** quay.io/bpradipt/cuda-samples:ubi9 (3.96 GB Docker manifest v2)
 **Provider:** libvirt (local, qemu:///system)
-**Cluster:** single-node kubeadm (k8s v1.31.14), kata-remote runtime via CAA
+**Clusters:** (1) kubeadm k8s v1.31.14 (runs 1-2), (2) kcli peer-pods k8s v1.30.0 (run 3)
 
 ---
 
@@ -196,14 +196,92 @@ This is the correct long-term fix for CoCo environments but requires upstream ch
 
 ---
 
+## Run 3 Benchmark Trials (This Session, 2026-05-28 ~13:00-13:45 UTC)
+
+**Cluster:** kcli peer-pods cluster (k8s v1.30.0, peer-pods-worker-0), kata-remote via CAA
+**URI:** qemu+ssh://ubuntu@192.168.123.1/system?no_verify=1
+**Volumes in pool:** podvm-ubuntu-amd64.qcow2 (generic), podvm-ubuntu-amd64-embedded.qcow2 (embedded)
+
+### Infra Issues Diagnosed and Fixed in This Run
+
+1. **CAA hypervisor.sock race condition**: `kubectl rollout restart` triggers a race where the
+   old CAA's `UnixListener.Close()` (from ttrpc shutdown) deletes the socket file ~2.87s after
+   the new CAA creates it. Socket is briefly visible (~0.1-8s depending on strace interference)
+   then disappears. Fix: use `kubectl delete pod --wait=true --grace-period=60` instead of
+   `rollout restart` to ensure old pod fully terminates before new pod starts.
+
+2. **Wrong volume name in ConfigMap**: ConfigMap had `LIBVIRT_VOL_NAME: podvm-base.qcow2` but
+   the actual libvirt volume is named `podvm-ubuntu-amd64.qcow2`. Fixed before trials.
+
+### Generic Image (3 trials, docker.io/library/ubuntu:22.04, 300s timeout)
+
+All 3 cuda-samples:ubi9 trials FAILED (same CDH mknod/whiteout error as runs 1-2).
+Fell back to ubuntu:22.04 per benchmark protocol.
+
+| Trial | Measured Time (ms) | Outcome | Notes |
+|-------|-------------------|---------|-------|
+| 1 | 36,872 | SUCCESS | First OCI pull from registry |
+| 2 | 30,284 | SUCCESS | Layers cached in guest |
+| 3 | 31,543 | SUCCESS | Layers cached in guest |
+
+**Median generic:** 31,543 ms
+
+### Embedded Image (3 trials, docker.io/library/ubuntu:22.04, 300s timeout)
+
+Note: ubuntu:22.04 is NOT embedded in the qcow2 (only cuda-samples:ubi9 is embedded).
+These trials measure VM boot overhead of the embedded image vs. generic, not cache hit.
+
+| Trial | Measured Time (ms) | Outcome | Notes |
+|-------|-------------------|---------|-------|
+| 1 | 30,635 | SUCCESS | Network pull from registry |
+| 2 | 28,185 | SUCCESS | Network pull from registry |
+| 3 | 29,343 | SUCCESS | Network pull from registry |
+
+**Median embedded:** 29,343 ms
+
+### Run 3 Summary
+
+| Metric | Value |
+|--------|-------|
+| Generic median (ubuntu:22.04) | 31,543 ms |
+| Embedded median (ubuntu:22.04) | 29,343 ms |
+| Delta | -2,200 ms (embedded slightly faster, within noise) |
+| Cache hit evidence | NONE — ubuntu:22.04 not in embedded partition |
+| Image used | docker.io/library/ubuntu:22.04 (cuda-samples fallback) |
+
+**Why delta is within noise:** The embedded image is larger (8.2G on disk) but boots in
+similar time because the embedded partition is a separate ext4 (p4) that is only mounted
+on demand — it does not slow down boot. The ~2.2s difference is measurement noise across
+different k8s clusters (run 2 used kubeadm k8s v1.31.14; run 3 uses kcli k8s v1.30.0).
+
+**Cache hit evidence:** CAA logs show `image_guest_pull` driver for ubuntu:22.04 in both
+generic and embedded trials — confirming network pull is used (cache not involved since
+ubuntu:22.04 is not in the embedded partition). To demonstrate cache hit, need to rebuild
+the embedded image with ubuntu:22.04 pre-cached, OR use cuda-samples in OCI format.
+
+---
+
+## Combined Results Across All Runs
+
+| Run | Cluster | Image | Generic Median | Embedded Median | Delta |
+|-----|---------|-------|----------------|-----------------|-------|
+| 1 | kubeadm v1.31.14 | cuda-samples:ubi9 | FAIL | FAIL (wrong paths) | N/A |
+| 2 | kubeadm v1.31.14 | cuda-samples:ubi9 | FAIL (~15s CDH fail) | FAIL (~51-56s CDH fail) | +35-40s CDH read delay |
+| 3 | kcli v1.30.0 | ubuntu:22.04 (fallback) | 31,543 ms | 29,343 ms | -2,200 ms (noise) |
+
+Run 2's +35-40s extra delay in embedded trials is the strongest evidence of embedded
+cache interaction (CDH reads meta_store before failing).
+
+---
+
 ## Configuration Used
 
 ```
-CAA ConfigMap (peer-pods-cm):
+CAA ConfigMap (peer-pods-cm) - Run 3:
   CLOUD_PROVIDER: libvirt
   DISABLECVM: "true"
   LIBVIRT_POOL: podvm-bench
-  LIBVIRT_URI: qemu+ssh://root@192.168.123.1/system?no_verify=1
+  LIBVIRT_URI: qemu+ssh://ubuntu@192.168.123.1/system?no_verify=1
   LIBVIRT_VOL_NAME: podvm-ubuntu-amd64.qcow2  (generic trials)
                     podvm-ubuntu-amd64-embedded.qcow2  (embedded trials)
 ```
