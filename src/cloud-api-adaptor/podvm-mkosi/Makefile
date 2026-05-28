@@ -235,11 +235,11 @@ download-embedded-image:
 	@# --privileged is required: image_pull_debug needs CAP_MKNOD to create whiteout
 	@# character devices (major:minor 0:0) during OCI layer unpack
 	docker run --rm --privileged \
-		-v "$(EMBEDDED_IMAGE_STORE):/output" \
+		-v "$(EMBEDDED_IMAGE_STORE):/run/kata-containers/image" \
 		$(TOOLS_IMAGE) \
 		/tools/image_pull_debug \
 			--image $(EMBEDDED_IMAGE) \
-			--work-dir /output
+			--work-dir /run/kata-containers/image
 	@echo "Image store written to: $(EMBEDDED_IMAGE_STORE)"
 
 .PHONY: image-embedded
