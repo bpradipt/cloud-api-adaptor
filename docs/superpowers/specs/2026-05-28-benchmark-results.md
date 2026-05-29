@@ -269,9 +269,13 @@ the embedded image with ubuntu:22.04 pre-cached, OR use cuda-samples in OCI form
 | 2 | kubeadm v1.31.14 | cuda-samples:ubi9 | FAIL (~15s CDH fail) | FAIL (~51-56s CDH fail) | +35-40s CDH read delay |
 | 3 | kcli v1.30.0 | ubuntu:22.04 (fallback) | 31,543 ms | 29,343 ms | -2,200 ms (noise) |
 | 4 | kcli v1.30.0 | ubuntu:22.04 (fallback) | 53,417 ms | 51,809 ms | -1,608 ms (noise) |
+| 5 | kcli v1.30.0 | ubuntu:22.04 (fallback) | 51,075 ms | 51,268 ms | +193 ms (noise) |
 
 Run 2's +35-40s extra delay in embedded trials is the strongest evidence of embedded
 cache interaction (CDH reads meta_store before failing).
+
+Run 5 status: ubi9-large FAILS both generic (CDH 60s timeout) and embedded (ENOSPC: 345 MB free
+on 4.3 GB ext4 partition, 3.8 GB needed for snapshot creation from compressed layer blobs).
 
 ---
 
@@ -366,10 +370,139 @@ cuda-samples.
 
 ---
 
+## Run 5 Benchmark Trials (2026-05-29 ~09:55-11:35 UTC)
+
+**Cluster:** kcli peer-pods cluster (k8s v1.30.0, peer-pods-worker-0), kata-remote via CAA
+**Target image:** quay.io/bpradipt/cuda-samples:ubi9-large (~3.6 GB OCI format, no char-device whiteouts)
+**Embedded partition:** built with ubi9-large (5 layers, 4.3 GB ext4 partition with 345 MB free)
+**Fallback image:** docker.io/library/ubuntu:22.04 (forced fallback — ubi9-large fails both generic and embedded)
+
+### Why ubi9-large Fails
+
+**ubi9-large** was built specifically to avoid the char-device whiteout issue:
+```
+docker history quay.io/bpradipt/cuda-samples:ubi9-large:
+  RUN dd if=/dev/urandom of=/layer3.bin bs=1M count=1260   # 1.26 GB
+  RUN dd if=/dev/urandom of=/layer2.bin bs=1M count=1260   # 1.26 GB
+  RUN dd if=/dev/urandom of=/layer1.bin bs=1M count=1260   # 1.26 GB
+  RUN apt-get update && apt-get install -y curl            # 7.78 MB
+  ADD ubuntu:22.04 base                                    # 87.5 MB
+```
+Random data layers (incompressible entropy ~1.0) → compressed size ≈ uncompressed size ≈ 1.26 GB each.
+
+**Generic failure:** CDH tries to download 3.6 GB layers from registry. The CDH API timeout (60s) is hit
+before all layers download. Error: `CreateContainerRequest timed out: context deadline exceeded`.
+
+**Embedded failure:** `image_pull_debug` stores large layers as compressed `.bin` blobs in the layer
+directories (not pre-extracted). When CDH tries to create a snapshot from the embedded layers, it
+decompresses the `.bin` blobs to a snapshot directory — which resides on the SAME embedded ext4
+partition (4.3 GB total, 3.7 GB used by blobs = only 345 MB free). Snapshot creation fails with
+`Failed to unpack layer to destination` = `ENOSPC`.
+
+The `snapshot_db` in meta_store is empty because `image_pull_debug` only stores layer blobs, not
+pre-built overlay snapshots. CDH must create the snapshot at runtime, requiring ~3.8 GB of free
+space that the embedded partition does not have.
+
+**Root cause:** The embedded partition needs ~2× the layer size to hold both the layer blobs AND the
+snapshot directories created during first container start. For ubi9-large (3.6 GB compressed blobs,
+3.6 GB uncompressed = ~7.2 GB total needed), a 4.3 GB partition is insufficient.
+
+### Infrastructure Issues Encountered in Run 5
+
+1. **CAA hypervisor.sock deletion race**: When `kubectl rollout restart` triggers a new CAA pod,
+   the old pod (still in `hostNetwork`) holds the socket bound at the kernel level but the socket
+   file may be unlinked by:
+   - Old process `UnixListener.Close()` calling `unlink()` during graceful shutdown
+   - New process calling `os.RemoveAll(socketPath)` on startup
+   The CAA startup probe (port 8000) fails if the old container's process still holds port 8000
+   (both share `hostNetwork`), causing restart loops that repeatedly delete/re-create the socket.
+   **Fix applied:** `sudo kill -9 <old-PID>` on the worker node before `rollout restart`.
+
+2. **kata.peerpods.io/vm resource depletion**: CAA sets extended resources via `AdvertiseExtendedResources`
+   but kubelet overwrites status periodically. After pod failures, the resource count depletes to 0.
+   **Fix applied:** `kubectl proxy` + PATCH to reset to 5 or 10.
+
+### Generic Image Trials (podvm-ubuntu-amd64.qcow2 + ubuntu:22.04, Run 5)
+
+| Trial | Time (ms) | Outcome | Notes |
+|-------|-----------|---------|-------|
+| G1 | 50,669 | SUCCESS | Network pull from registry |
+| G2 | 51,075 | SUCCESS | Layers cached in guest |
+| G3 | 51,111 | SUCCESS | Layers cached in guest |
+
+**Median generic (ubuntu:22.04):** 51,075 ms
+
+### Embedded Image Trials (podvm-ubuntu-amd64-embedded.qcow2 + ubuntu:22.04, Run 5)
+
+Note: ubuntu:22.04 is NOT in the embedded ubi9-large partition. These measure VM boot overhead only.
+
+| Trial | Time (ms) | Outcome | Notes |
+|-------|-----------|---------|-------|
+| E1 | 51,268 | SUCCESS | Network pull from registry |
+| E2 | 51,562 | SUCCESS | Network pull from registry |
+| E3 | 51,235 | SUCCESS | Network pull from registry |
+
+**Median embedded (ubuntu:22.04):** 51,268 ms
+
+### Run 5 Summary
+
+| Metric | Value |
+|--------|-------|
+| Generic median (ubuntu:22.04) | 51,075 ms |
+| Embedded median (ubuntu:22.04) | 51,268 ms |
+| Delta | +193 ms (noise, embedded slightly slower) |
+| Cache hit evidence | NONE — ubuntu:22.04 not in embedded partition |
+| ubi9-large generic result | FAIL — CDH API 60s timeout downloading 3.6 GB |
+| ubi9-large embedded result | FAIL — ENOSPC on 4.3 GB ext4 (only 345 MB free for snapshot) |
+
+**The +193 ms difference is well within measurement noise.** Both images boot in ~51 seconds using
+network pull of ubuntu:22.04. The embedded VM's larger disk (4.6 GB qcow2 vs 992 MB) does not
+slow boot because the embedded ext4 partition (p4) is only mounted on demand.
+
+### ubi9-large Layer Analysis
+
+Verified via `docker history` and inspecting embedded partition:
+- 5 layers total, only 2 extracted as dirs (`layers/0` and `layers/1`)
+- 3 large layers stored as compressed blobs: `layers/2/layer1.bin`, `layers/3/layer2.bin`, `layers/4/layer3.bin`
+- Embedded ext4 partition: 4.3 GB size, 3.7 GB used (345 MB free = 8% free)
+- Snapshot creation requires ~3.8 GB additional space → ENOSPC
+
+No char-device whiteouts confirmed: `find layers/ -type c` returns 0 results. The fix for char-device
+whiteouts succeeded, but the image size creates a new barrier (tmpfs/partition space).
+
+### Path Forward for ubi9-large Benchmark
+
+To make ubi9-large work in embedded mode, one of:
+1. **Larger partition**: Embed with 8+ GB partition (needs ~15 GB total qcow2). Disk space on host
+   (193 GB, 188 GB used, 5 GB free) prevents this without cleanup.
+2. **Pre-built snapshots**: Extend `embed-image.sh` to run `image_pull_debug` then use the overlay
+   snapshot (upperdir+workdir+lowerdir) as the pre-built snapshot, populating `snapshot_db` so CDH
+   finds an existing snapshot and skips decompression entirely.
+3. **Smaller test image**: Use a different large OCI image where all layers extract to a size
+   that fits within the 4.3 GB embedded partition with enough headroom for snapshots.
+4. **CDH tmpfs fallback**: Configure CDH to decompress layer blobs to host tmpfs (8 GB RAM)
+   rather than back to the embedded ext4 partition. This requires CDH config changes.
+
+---
+
+## Combined Results Across All Runs
+
+| Run | Cluster | Image | Generic Median | Embedded Median | Delta |
+|-----|---------|-------|----------------|-----------------|-------|
+| 1 | kubeadm v1.31.14 | cuda-samples:ubi9 | FAIL | FAIL (wrong paths) | N/A |
+| 2 | kubeadm v1.31.14 | cuda-samples:ubi9 | FAIL (~15s CDH fail) | FAIL (~51-56s CDH fail) | +35-40s CDH read delay |
+| 3 | kcli v1.30.0 | ubuntu:22.04 (fallback) | 31,543 ms | 29,343 ms | -2,200 ms (noise) |
+| 4 | kcli v1.30.0 | ubuntu:22.04 (fallback) | 53,417 ms | 51,809 ms | -1,608 ms (noise) |
+| 5 | kcli v1.30.0 | ubuntu:22.04 (fallback) | 51,075 ms | 51,268 ms | +193 ms (noise) |
+
+ubi9-large blocked by: CDH 60s API timeout (generic) + ENOSPC on 345 MB free embedded partition.
+
+---
+
 ## Configuration Used
 
 ```
-CAA ConfigMap (peer-pods-cm) - Run 3/4:
+CAA ConfigMap (peer-pods-cm) - Run 3/4/5:
   CLOUD_PROVIDER: libvirt
   DISABLECVM: "true"
   LIBVIRT_POOL: podvm-bench
