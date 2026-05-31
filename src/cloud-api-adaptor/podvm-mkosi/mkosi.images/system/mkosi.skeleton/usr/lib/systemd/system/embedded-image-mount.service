@@ -1,0 +1,21 @@
+[Unit]
+Description=Mount embedded container image store if present
+DefaultDependencies=no
+After=local-fs.target
+Before=confidential-data-hub.service kata-agent.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash -c '\
+    udevadm settle --timeout=10 2>/dev/null; \
+    if blkid -L embedded_image > /dev/null 2>&1; then \
+        mkdir -p /run/kata-containers/image; \
+        mount -t ext4 -L embedded_image /run/kata-containers/image -o rw,relatime; \
+        echo "Embedded image partition mounted"; \
+    else \
+        echo "No embedded_image partition found, skipping"; \
+    fi'
+
+[Install]
+WantedBy=multi-user.target

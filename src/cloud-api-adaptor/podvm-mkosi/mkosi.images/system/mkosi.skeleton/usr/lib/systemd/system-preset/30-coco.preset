@@ -11,3 +11,5 @@ enable image-env.service
 enable scratch-storage.path
 
 enable run-kata\x2dcontainers-image.mount
+
+enable embedded-image-mount.service
