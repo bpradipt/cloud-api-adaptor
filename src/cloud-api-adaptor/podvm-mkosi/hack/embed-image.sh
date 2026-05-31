@@ -46,9 +46,11 @@ WORK_IMAGE="${RAW_IMAGE%.raw}-embedded.raw"
 echo "Copying $RAW_IMAGE -> $WORK_IMAGE ..."
 cp "$RAW_IMAGE" "$WORK_IMAGE"
 
-# Calculate partition size: image store size + 20% headroom (minimum 512 MB)
+# Calculate partition size: image store size + 100% headroom (minimum 512 MB).
+# CDH decompresses layer blobs into overlay/ on the same partition when creating
+# the container rootfs, so it needs ~1x the image size of additional free space.
 IMAGE_SIZE_MB=$(du -sm "$IMAGE_STORE" | cut -f1)
-HEADROOM_MB=$(( IMAGE_SIZE_MB / 5 ))
+HEADROOM_MB=$(( IMAGE_SIZE_MB ))
 HEADROOM_MB=$(( HEADROOM_MB < 512 ? 512 : HEADROOM_MB ))
 PARTITION_SIZE_MB=$(( IMAGE_SIZE_MB + HEADROOM_MB ))
 
