@@ -87,20 +87,31 @@ if [ ! -b "$PARTITION" ]; then
     exit 1
 fi
 
-echo "Formatting $PARTITION as ext4 with label embedded_image ..."
-mkfs.ext4 -L embedded_image "$PARTITION"
+echo "Formatting $PARTITION as ext4 (no journal) with label embedded_image ..."
+# Create ext4 WITHOUT journal first, so rsync can fill the partition.
+# After populating, we add the journal - tune2fs places it near the END of the
+# filesystem in the free space, away from the data blocks rsync wrote.
+mkfs.ext4 -L embedded_image -O ^has_journal "$PARTITION"
 
-# Mount and populate
+# Mount and populate (no journal means no risk of rsync overwriting journal blocks)
 MOUNT_POINT=$(mktemp -d)
 mount "$PARTITION" "$MOUNT_POINT"
 
 echo "Copying image store into partition ..."
 rsync -a --info=progress2 "$IMAGE_STORE"/ "$MOUNT_POINT"/
 
-# Clean up loop device
+echo "Unmounting partition ..."
 umount "$MOUNT_POINT"
 rmdir "$MOUNT_POINT"
+MOUNT_POINT=""
+
+echo "Adding journal to ext4 partition (placed at end of filesystem) ..."
+# tune2fs adds the journal using free blocks near the end of the filesystem
+tune2fs -O has_journal "$PARTITION"
+e2fsck -f -p "$PARTITION" 2>/dev/null || true
+
 losetup -d "$LOOP_DEV"
+LOOP_DEV=""
 
 # Convert to qcow2
 echo "Converting to qcow2: $OUTPUT_QCOW2"
