@@ -1,0 +1,194 @@
+# syntax=docker/dockerfile:1.5.0-labs
+# Embedded container image podvm build for Ubuntu
+#
+# Builds a podvm image with a pre-embedded OCI container image so CDH can
+# serve it from local cache at boot without any registry access.
+#
+# Stages:
+#   cdh-builder     - builds CDH daemon + cdh-oneshot from the fork with reference_db patch
+#   image-puller    - pre-pulls EMBEDDED_IMAGE and creates an erofs layer archive
+#   mkosi-builder   - produces system.raw with embedded erofs + patched CDH binary
+#
+# Key notes on the fork's Makefile behaviour:
+#   - Regular build  → target/.../confidential-data-hub  (the daemon)
+#   - ONE_SHOT=true  → builds cdh-oneshot, then RENAMES it to
+#                      target/.../confidential-data-hub (overwrites the daemon)
+# We therefore save the daemon immediately after the regular build before
+# running ONE_SHOT=true, and save the renamed binary as cdh-oneshot for
+# use in the image-puller stage.
+#
+# The Cargo workspace root is /guest-components so target/ is at
+# /guest-components/target/, NOT inside the confidential-data-hub subdirectory.
+#
+# Usage:
+#   make image-embedded EMBEDDED_IMAGE=quay.io/bpradipt/kata-vm-image:7may
+
+# ── Stage 1: Build CDH binaries from the fork ──────────────────────────────
+# ubuntu:24.04
+FROM ubuntu@sha256:0d39fcc8335d6d74d5502f6df2d30119ff4790ebbb60b364818d5112d9e3e932 AS cdh-builder
+
+ARG GC_REPO=https://github.com/bpradipt/guest-components.git
+ARG GC_BRANCH=image-cache-0.20.0
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && \
+    apt-get install -y \
+        curl git build-essential pkg-config \
+        libssl-dev musl-tools clang protobuf-compiler && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Rust stable toolchain
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain stable --no-modify-path
+ENV PATH="/root/.cargo/bin:$PATH"
+
+# Add musl target for static linking
+RUN rustup target add x86_64-unknown-linux-musl
+
+# Clone fork at the specified branch (shallow for speed)
+RUN git clone --depth=1 -b "${GC_BRANCH}" "${GC_REPO}" /guest-components
+
+# Cargo workspace root is /guest-components; target/ is at /guest-components/target/
+WORKDIR /guest-components
+
+# Build the CDH daemon (with reference_db patch)
+RUN make -C confidential-data-hub \
+    LIBC=musl \
+    RESOURCE_PROVIDER=kbs \
+    KMS_PROVIDER=aliyun \
+    RPC=ttrpc
+
+# Save the daemon binary BEFORE ONE_SHOT=true overwrites it.
+# The workspace target is at /guest-components/target/ (not inside the subdir).
+RUN cp target/x86_64-unknown-linux-musl/release/confidential-data-hub /cdh-daemon
+
+# Build cdh-oneshot.  The fork's Makefile with ONE_SHOT=true:
+#   1. cargo builds a binary named cdh-oneshot
+#   2. renames target/.../cdh-oneshot → target/.../confidential-data-hub
+# After this step target/.../confidential-data-hub IS the oneshot binary
+# (it has the pull-image subcommand).
+RUN make -C confidential-data-hub \
+    LIBC=musl \
+    RESOURCE_PROVIDER=kbs \
+    KMS_PROVIDER=aliyun \
+    ONE_SHOT=true
+
+# Save the oneshot binary under a stable name for downstream stages.
+RUN cp target/x86_64-unknown-linux-musl/release/confidential-data-hub /cdh-oneshot
+
+# ── Stage 2: Pre-pull container image and create erofs layer archive ────────
+# ubuntu:24.04
+FROM ubuntu@sha256:0d39fcc8335d6d74d5502f6df2d30119ff4790ebbb60b364818d5112d9e3e932 AS image-puller
+
+ARG EMBEDDED_IMAGE=docker.io/library/nginx:latest
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && \
+    apt-get install -y erofs-utils ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# Musl-linked binaries look for the CA bundle at /etc/ssl/cert.pem (Alpine path).
+# Ubuntu puts it at /etc/ssl/certs/ca-certificates.crt.  Symlink so both work.
+RUN ln -sf /etc/ssl/certs/ca-certificates.crt /etc/ssl/cert.pem
+
+# cdh-oneshot is the ONE_SHOT build of CDH; it has a pull-image subcommand.
+# CLI: cdh-oneshot pull-image --image-url <URL> --bundle-path <PATH>
+# The image-rs work_dir is hardcoded to /run/kata-containers/image/; the
+# --bundle-path is where the OCI rootfs bundle ends up (we don't use it, but
+# the command won't complete without it).
+COPY --from=cdh-builder /cdh-oneshot /usr/local/bin/cdh-oneshot
+
+# Pull the container image into the local layer store and create the erofs.
+#
+# Why tmpfs at /run/kata-containers:
+#   image-rs overlay snapshots require the upper/workdir to be on a
+#   non-overlay filesystem.  BuildKit's storage is overlay2, so a plain
+#   mkdir would give us an overlay-backed upperdir → EINVAL.
+#   Mounting tmpfs first makes the upperdir live on tmpfs → succeeds.
+#
+# All in a single RUN so the tmpfs stays mounted for the mkfs.erofs step.
+RUN --security=insecure --network=host \
+    mkdir -p /run/kata-containers /tmp/kata-bundle && \
+    mount -t tmpfs tmpfs /run/kata-containers && \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    SSL_CERT_DIR=/etc/ssl/certs \
+    /usr/local/bin/cdh-oneshot pull-image \
+        --image-url "${EMBEDDED_IMAGE}" \
+        --bundle-path /tmp/kata-bundle && \
+    mkfs.erofs -z lz4 -E dedupe /layers.erofs /run/kata-containers/image/layers && \
+    cp /run/kata-containers/image/meta_store.json /meta_store.json
+
+# ── Stage 3: Build mkosi podvm image with embedded content ──────────────────
+# ubuntu:24.04
+FROM ubuntu@sha256:0d39fcc8335d6d74d5502f6df2d30119ff4790ebbb60b364818d5112d9e3e932 AS mkosi-builder
+
+ARG MKOSI_VERSION="v26"
+ARG PROFILE="debug"
+ARG IMAGE_VERSION="0.0.0"
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && \
+    apt-get install -y \
+        bubblewrap \
+        git \
+        cpio \
+        systemd-repart \
+        kmod \
+        systemd-boot-efi \
+        libcryptsetup12 \
+        squashfs-tools \
+        systemd-ukify \
+        dosfstools \
+        mtools \
+        python3 \
+        debian-archive-keyring \
+        zstd && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /build
+WORKDIR /build
+RUN git clone -b "$MKOSI_VERSION" https://github.com/systemd/mkosi
+ENV PATH="/build/mkosi/bin:$PATH"
+RUN mkosi --version
+
+RUN mkdir /image
+WORKDIR /image
+
+COPY mkosi.images    /image/mkosi.images
+COPY mkosi.skeleton-debug  /image/mkosi.skeleton-debug
+COPY mkosi.skeleton-sftp   /image/mkosi.skeleton-sftp
+COPY mkosi.workspace /image/mkosi.workspace
+COPY resources       /image/resources
+COPY mkosi.conf.ubuntu /image/mkosi.conf
+
+# Replace the upstream CDH binary with the fork's patched daemon.
+# The daemon binary was saved to /cdh-daemon before ONE_SHOT=true overwrote it.
+COPY --from=cdh-builder \
+    /cdh-daemon \
+    /image/resources/binaries-tree/usr/local/bin/confidential-data-hub
+
+# Inject the erofs layer archive and reference_db metadata into the image
+# at /usr/lib/kata-cache/.  That path lives on the read-only squashfs rootfs
+# so it is safe from systemd.volatile=state which only affects /var.
+COPY --from=image-puller \
+    /layers.erofs \
+    /image/mkosi.images/system/mkosi.skeleton/usr/lib/kata-cache/layers.erofs
+
+COPY --from=image-puller \
+    /meta_store.json \
+    /image/mkosi.images/system/mkosi.skeleton/usr/lib/kata-cache/meta_store.json
+
+# Build the image with the embedded profile active alongside the base profile.
+RUN --security=insecure \
+    mkosi \
+        --profile=embedded \
+        --profile="${PROFILE}" \
+        --image-version="${IMAGE_VERSION}"
+
+# ── Final stage: export only the raw disk image ─────────────────────────────
+FROM scratch
+
+COPY --from=mkosi-builder /image/build/system.raw /

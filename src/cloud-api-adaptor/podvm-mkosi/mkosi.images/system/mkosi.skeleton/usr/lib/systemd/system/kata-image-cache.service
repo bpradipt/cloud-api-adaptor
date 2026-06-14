@@ -1,0 +1,17 @@
+[Unit]
+Description=Kata Peer Pod Image Cache Setup
+# Must complete before CDH reads the image store and before kata-agent starts.
+Before=confidential-data-hub.service kata-agent.service
+# local-fs.target ensures the squashfs rootfs (and /usr/lib/kata-cache) is mounted.
+After=local-fs.target
+DefaultDependencies=no
+# Skip silently when running a non-embedded image.
+ConditionPathExists=/usr/lib/kata-cache/layers.erofs
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/kata-image-cache-setup
+
+[Install]
+WantedBy=multi-user.target

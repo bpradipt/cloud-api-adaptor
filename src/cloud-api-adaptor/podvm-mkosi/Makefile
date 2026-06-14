@@ -16,6 +16,13 @@ PODVM_BYOM_E2E_CONTAINER_NAME ?= $(REGISTRY)/podvm-byom-e2e-image-$(DISTRO_ARCH)
 VERIFY_PROVENANCE ?= no
 MKOSI_VERSION ?= v26
 
+# Embedded container image build variables
+# EMBEDDED_IMAGE: OCI image reference to pre-cache inside the podvm
+EMBEDDED_IMAGE ?= docker.io/library/nginx:latest
+# GC_REPO/GC_BRANCH: guest-components fork with reference_db patch for CDH
+GC_REPO ?= https://github.com/bpradipt/guest-components.git
+GC_BRANCH ?= image-cache-0.20.0
+
 _SHA := $(shell git rev-parse --short HEAD)
 _SHA_DIRTY := $(shell [ -n "$$(git status --porcelain 2>/dev/null)" ] && printf -- '-dirty')
 IMAGE_VERSION ?= $(_SHA)$(_SHA_DIRTY)
@@ -177,6 +184,28 @@ else
 		.
 	qemu-img convert -f raw -O qcow2 build/system.raw build/podvm-$(PODVM_DISTRO)-$(DISTRO_ARCH).qcow2
 endif
+
+PHONY: image-embedded
+image-embedded: binaries insecure-builder
+	@echo "Building embedded image (EMBEDDED_IMAGE=$(EMBEDDED_IMAGE))..."
+	rm -rf ./build
+	mkdir -p build
+	docker buildx build \
+		-f Dockerfile.mkosi.embedded$(if $(filter $(PODVM_DISTRO),ubuntu),.ubuntu,) \
+		-t $(PODVM_IMAGE) \
+		--build-arg PROFILE=debug \
+		--build-arg IMAGE_VERSION \
+		--build-arg MKOSI_VERSION \
+		--build-arg EMBEDDED_IMAGE=$(EMBEDDED_IMAGE) \
+		--build-arg GC_REPO=$(GC_REPO) \
+		--build-arg GC_BRANCH=$(GC_BRANCH) \
+		--progress=plain \
+		-o type=local,dest=./build \
+		--builder insecure-builder \
+		--allow security.insecure \
+		--allow network.host \
+		.
+	qemu-img convert -f raw -O qcow2 build/system.raw build/podvm-$(PODVM_DISTRO)-$(DISTRO_ARCH)-embedded.qcow2
 
 PHONY: image-container
 image-container:

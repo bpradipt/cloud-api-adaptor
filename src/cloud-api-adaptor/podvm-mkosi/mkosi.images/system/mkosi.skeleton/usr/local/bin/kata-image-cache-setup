@@ -1,0 +1,43 @@
+#!/bin/bash
+# kata-image-cache-setup
+#
+# Mounts the pre-embedded erofs layer archive directly at
+# /run/kata-containers/image/layers so CDH can serve the cached OCI image
+# to kata-agent without any registry access.
+#
+# Design choices:
+#
+#  1. Mount erofs DIRECTLY at the layer store path (not via an overlay).
+#     erofs is a valid overlay lower-dir source in Linux (unlike overlayfs,
+#     which would create an overlay-on-overlay restriction).  The direct mount
+#     is also instantaneous — no byte-for-byte copy, so kata-agent is not
+#     delayed waiting for large layers to be copied to tmpfs.
+#
+#  2. The /run/kata-containers/image/layers mount point is read-only (erofs).
+#     New network-pulled layers cannot be added there; that is intentional for
+#     the embedded-only cache use case.  CDH will still start normally; it
+#     simply won't be able to store new layers at this path.
+#
+#  3. meta_store.json is placed on the writable tmpfs so CDH can update it
+#     as needed (e.g., after a fresh pull adds entries).
+
+set -euo pipefail
+
+CACHE_DIR=/usr/lib/kata-cache
+EROFS_IMAGE="${CACHE_DIR}/layers.erofs"
+META_STORE="${CACHE_DIR}/meta_store.json"
+
+IMAGE_DIR=/run/kata-containers/image
+LAYERS_DIR="${IMAGE_DIR}/layers"
+
+mkdir -p "${IMAGE_DIR}" "${LAYERS_DIR}"
+
+# Load erofs kernel module (module in Ubuntu, built-in in kata kernel)
+modprobe erofs 2>/dev/null || true
+
+# Mount the erofs image directly at the layer store location.
+# Instantaneous (no copy); erofs is read-only which is fine for a lower-dir.
+mount -t erofs -o ro "${EROFS_IMAGE}" "${LAYERS_DIR}"
+
+# Place meta_store.json on tmpfs so CDH's reference_db lookup works.
+cp "${META_STORE}" "${IMAGE_DIR}/meta_store.json"
