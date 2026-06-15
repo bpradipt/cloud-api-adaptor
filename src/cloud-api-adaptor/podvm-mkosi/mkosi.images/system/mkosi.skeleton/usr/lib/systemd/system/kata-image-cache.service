@@ -6,7 +6,7 @@ Before=confidential-data-hub.service kata-agent.service
 After=local-fs.target
 DefaultDependencies=no
 # Skip silently when running a non-embedded image.
-ConditionPathExists=/usr/lib/kata-cache/layers.erofs
+ConditionPathExists=/usr/lib/kata-cache/layers
 
 [Service]
 Type=oneshot

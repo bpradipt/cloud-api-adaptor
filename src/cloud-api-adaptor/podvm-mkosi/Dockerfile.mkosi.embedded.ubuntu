@@ -6,8 +6,8 @@
 #
 # Stages:
 #   cdh-builder     - builds CDH daemon + cdh-oneshot from the fork with reference_db patch
-#   image-puller    - pre-pulls EMBEDDED_IMAGE and creates an erofs layer archive
-#   mkosi-builder   - produces system.raw with embedded erofs + patched CDH binary
+#   image-puller    - pre-pulls EMBEDDED_IMAGE; layers stored as plain directories
+#   mkosi-builder   - produces system.raw with embedded layer dirs + patched CDH binary
 #
 # Key notes on the fork's Makefile behaviour:
 #   - Regular build  → target/.../confidential-data-hub  (the daemon)
@@ -77,7 +77,7 @@ RUN make -C confidential-data-hub \
 # Save the oneshot binary under a stable name for downstream stages.
 RUN cp target/x86_64-unknown-linux-musl/release/confidential-data-hub /cdh-oneshot
 
-# ── Stage 2: Pre-pull container image and create erofs layer archive ────────
+# ── Stage 2: Pre-pull container image; keep layers as plain directories ───────
 # ubuntu:24.04
 FROM ubuntu@sha256:0d39fcc8335d6d74d5502f6df2d30119ff4790ebbb60b364818d5112d9e3e932 AS image-puller
 
@@ -86,7 +86,7 @@ ARG EMBEDDED_IMAGE=docker.io/library/nginx:latest
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
-    apt-get install -y erofs-utils ca-certificates && \
+    apt-get install -y ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 # Musl-linked binaries look for the CA bundle at /etc/ssl/cert.pem (Alpine path).
@@ -100,7 +100,7 @@ RUN ln -sf /etc/ssl/certs/ca-certificates.crt /etc/ssl/cert.pem
 # the command won't complete without it).
 COPY --from=cdh-builder /cdh-oneshot /usr/local/bin/cdh-oneshot
 
-# Pull the container image into the local layer store and create the erofs.
+# Pull the container image into the local layer store.
 #
 # Why tmpfs at /run/kata-containers:
 #   image-rs overlay snapshots require the upper/workdir to be on a
@@ -108,7 +108,13 @@ COPY --from=cdh-builder /cdh-oneshot /usr/local/bin/cdh-oneshot
 #   mkdir would give us an overlay-backed upperdir → EINVAL.
 #   Mounting tmpfs first makes the upperdir live on tmpfs → succeeds.
 #
-# All in a single RUN so the tmpfs stays mounted for the mkfs.erofs step.
+# Layers are copied out of the tmpfs as plain directories — no erofs needed.
+# The squashfs rootfs that mkosi produces compresses them during the build,
+# so there is no benefit to compressing them again with erofs.  At boot,
+# kata-image-cache-setup bind-mounts each layer directory directly from the
+# squashfs into the CDH layer store, skipping the erofs mount entirely.
+#
+# All in a single RUN so the tmpfs stays mounted for the cp step.
 RUN --security=insecure --network=host \
     mkdir -p /run/kata-containers /tmp/kata-bundle && \
     mount -t tmpfs tmpfs /run/kata-containers && \
@@ -117,7 +123,7 @@ RUN --security=insecure --network=host \
     /usr/local/bin/cdh-oneshot pull-image \
         --image-url "${EMBEDDED_IMAGE}" \
         --bundle-path /tmp/kata-bundle && \
-    mkfs.erofs -z lz4 -E dedupe /layers.erofs /run/kata-containers/image/layers && \
+    cp -a /run/kata-containers/image/layers /kata-layers && \
     cp /run/kata-containers/image/meta_store.json /meta_store.json
 
 # ── Stage 3: Build mkosi podvm image with embedded content ──────────────────
@@ -170,12 +176,13 @@ COPY --from=cdh-builder \
     /cdh-daemon \
     /image/resources/binaries-tree/usr/local/bin/confidential-data-hub
 
-# Inject the erofs layer archive and reference_db metadata into the image
-# at /usr/lib/kata-cache/.  That path lives on the read-only squashfs rootfs
-# so it is safe from systemd.volatile=state which only affects /var.
+# Inject the pre-pulled layer directories and reference_db metadata into the
+# image at /usr/lib/kata-cache/.  That path lives on the read-only squashfs
+# rootfs so it is safe from systemd.volatile=state which only affects /var.
+# squashfs compresses the layer directories during the mkosi build; no erofs.
 COPY --from=image-puller \
-    /layers.erofs \
-    /image/mkosi.images/system/mkosi.skeleton/usr/lib/kata-cache/layers.erofs
+    /kata-layers/ \
+    /image/mkosi.images/system/mkosi.skeleton/usr/lib/kata-cache/layers/
 
 COPY --from=image-puller \
     /meta_store.json \
