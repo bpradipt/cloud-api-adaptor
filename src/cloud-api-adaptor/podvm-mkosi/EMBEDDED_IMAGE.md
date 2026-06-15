@@ -1,9 +1,10 @@
 # Embedded Container Image in CAA PodVM
 
 Builds a podvm qcow2 that carries a pre-cached OCI container image inside its
-squashfs rootfs.  At boot, `kata-image-cache.service` mounts the embedded erofs
-archive directly at `/run/kata-containers/image/layers` so the patched CDH
-daemon can locate the image via its `reference_db` without any registry access.
+squashfs rootfs.  At boot, `kata-image-cache.service` copies the embedded
+`meta_store.json` into the CDH work directory and bind-mounts each cached layer
+directory from the erofs archive into the CDH layer store, so the patched CDH
+daemon can serve the image via its `reference_db` without any registry access.
 
 ---
 
@@ -210,17 +211,15 @@ spec:
   restartPolicy: Never
 ```
 
-### Expected boot timeline (4 GB VM, 2.3 GB squashfs)
+### Verified boot timeline (libvirt KVM, 4 GB VM, 2.3 GB squashfs)
 
 | Time | Event |
 |---|---|
 | T+0 s | CAA creates the VM (COW overlay on podvm-base.qcow2) |
-| T+30 s | UEFI loads 78 MB UKI into memory |
-| T+60 s | Kernel starts, dm-verity verifies 1.5 GB squashfs |
-| T+90 s | systemd starts; kata-image-cache.service mounts erofs (<1 s) |
-| T+120 s | CDH starts, reads meta_store.json |
-| T+~240 s | APF connects to worker node; kata-agent ready |
-| T+~250 s | Image pull request arrives; CDH resolves from reference_db |
+| T+20 s | VM ready, APF connects to worker node |
+| T+26 s | CreateSandbox completes |
+| T+27 s | CreateContainer — CDH resolves image from reference_db, overlay mounted |
+| T+28 s | StartContainer — container running, output confirmed |
 
 ---
 
@@ -264,7 +263,7 @@ while pre-cached layers are exposed read-only via individual bind mounts.
 | `Dockerfile.mkosi.embedded.ubuntu` | Multi-stage Dockerfile (cdh-builder → image-puller → mkosi-builder) |
 | `mkosi.images/system/mkosi.profiles/embedded.conf` | Sets `EMBEDDED_IMAGE_CACHE=true` env for finalize script |
 | `mkosi.images/system/mkosi.skeleton/usr/lib/systemd/system/kata-image-cache.service` | Systemd unit (enabled only in embedded profile) |
-| `mkosi.images/system/mkosi.skeleton/usr/local/bin/kata-image-cache-setup` | Boot script: direct erofs mount at layer store path |
+| `mkosi.images/system/mkosi.skeleton/usr/local/bin/kata-image-cache-setup` | Boot script: copies meta_store.json, bind-mounts cached layers from erofs |
 | `mkosi.images/system/mkosi.skeleton/usr/lib/systemd/system/kata-agent.service.d/10-image-cache.conf` | Soft `Wants=/After=kata-image-cache.service` |
 | `mkosi.images/system/mkosi.skeleton/usr/lib/systemd/system/confidential-data-hub.service.d/10-image-cache.conf` | Same for CDH |
 
